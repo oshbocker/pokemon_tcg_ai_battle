@@ -1,0 +1,49 @@
+[project]
+name = "pokemon-tcg-ai-battle"
+version = "0.1.0"
+description = "Agent + tooling for the Kaggle 'Pokémon TCG AI Battle Challenge (Simulation)' competition"
+requires-python = ">=3.11"
+dependencies = [
+    "kaggle-environments>=1.14.10",  # the cabt engine ships against this version
+    "numpy>=1.26.0",
+    "pandas>=2.0",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+    "kaggle>=2.2.2",  # CLI/API: leaderboard, submissions, kernels (code), discussions (topics)
+    "ipykernel",
+    "jupyter",
+    "ruff>=0.8",
+    "pyright>=1.1.390",
+]
+
+[tool.uv]
+# For a CUDA build of torch (RL/IL agents), install torch first against the CUDA wheel index:
+#   uv pip install torch --index-url https://download.pytorch.org/whl/cu121 && uv sync
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["outputs", "notebooks", ".venv", "submissions"]
+
+[tool.ruff.lint]
+# E/F = pyflakes+pycodestyle, I = isort, UP = pyupgrade,
+# B = bugbear, SIM = simplify. Sensible defaults, not pedantic.
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "B008",   # function calls in argument defaults (common for configs)
+]
+
+[tool.pyright]
+include = ["src", "scripts"]
+exclude = ["outputs", "notebooks", "**/__pycache__", ".venv", "submissions"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+# kaggle / kaggle-environments / numpy ship partial-or-no stubs; don't drown in
+# missing-stub noise.
+reportMissingTypeStubs = false
+reportMissingModuleSource = false
