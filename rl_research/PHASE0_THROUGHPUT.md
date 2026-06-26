@@ -23,14 +23,41 @@ With `--parse` (running `to_observation_class()` every step, as a naive RL loop
 would): peak **9,307 dec/s** at 4 workers — i.e. **dataclass parsing ~halves
 throughput**.
 
+## Run 2 — Colab "downgrade" runtime (2026-06-26)
+
+Asked for **H100; Colab downgraded to** an **RTX PRO 6000 Blackwell (96 GB)** GPU
+runtime — **note: H100 can be hard to get on Colab**, plan around it. The host is
+no slouch: **AMD EPYC 9B45, 48 vCPU / 24 physical cores, 176 GB RAM.** Policy
+`first`. ~136 decisions/game.
+
+| workers | games/s | decisions/s | notes |
+|--:|--:|--:|--:|
+| 1 | 80.9 | 10,946 | 2.3× the laptop core |
+| 2 | 134.0 | 18,379 | |
+| 4 | 164.3 | 22,405 | |
+| 6 | 214.3 | 29,318 | |
+| 8 | 268.6 | 36,490 | |
+| 12 | 373.0 | 50,649 | |
+| 16 | 462.9 | **63,347** | **still climbing — not the peak** |
+
+`--parse` at 8 workers: 28,589 dec/s vs 36,490 (≈22% tax — smaller than the
+laptop's ~50% because the box is far from saturated at 8/48 vCPU).
+
+**⚠ We undershot the sweep — it never peaked (monotonic to 16, and 24 physical
+cores remain). Re-run `--procs 16,24,32,48` to find the real ceiling.** Unlike the
+laptop, server silicon kept scaling well past the laptop's early peak, so the
+"hyperthreads hurt" finding is **laptop-specific**, not general.
+
 ## Key findings
 
-1. **Throughput scales ~linearly with *physical* x86 cores, then flatlines.**
-   1→2→4 workers = 4.8K→9.4K→18.1K dec/s (near-perfect linear); hyperthreads add
-   nothing and slightly hurt. **Rule of thumb on this box: ~4.5K dec/s per
-   physical core (engine only).** A modern server core (3–4 GHz, better IPC)
-   should do meaningfully more — likely 2–3× per core. ⇒ When renting, **buy
-   physical x86 core count**, and set `--procs ≈ physical cores`.
+1. **Throughput scales with x86 cores — and on server silicon keeps climbing
+   into the hyperthread range.** Laptop (4 phys cores): near-linear 1→2→4 then HT
+   *hurt* (peak at 4). Server EPYC (24 phys / 48 vCPU): monotonic all the way to
+   16 workers and **still rising** — HT helped here, the laptop's early peak was a
+   4-core/1.8 GHz artifact (likely thermal). Per-core throughput: **~4.5K dec/s
+   (laptop) vs ~11K dec/s (EPYC core)**. ⇒ When renting, **buy physical x86 core
+   count**, but **measure the actual peak per box** — set `--procs` from the sweep,
+   not a fixed rule. (Server peak still TBD: re-run `--procs 16,24,32,48`.)
 
 2. **`to_observation_class()` costs as much as the entire engine step (~2×
    slowdown).** The recursive `to_dataclass` parse is pure Python overhead. ⇒
