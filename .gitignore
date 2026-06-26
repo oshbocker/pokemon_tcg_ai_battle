@@ -6,6 +6,7 @@ outputs/episodes/
 outputs/discussions/
 outputs/kernels/
 outputs/logs/
+outputs/eval/
 
 # Keep the placeholder
 !outputs/.gitkeep

@@ -94,8 +94,53 @@ Two clear conclusions:
    when H100/A100 are unavailable, so availability favors exactly the two we want.)
 
 > Caveat: measured dec/s is *engine-only* (trivial policy). Real throughput drops
-> once policy inference is added — that's the still-pending **P0.3** probe (needs
-> `torch`). On the L4, batch inference across the 12 workers on its GPU.
+> once policy inference is added — quantified in **P0.3** below. On the L4/Blackwell,
+> batch inference across the workers on its GPU (decoupled from the CPU envs).
+
+## P0.3 — inference-cost probe: RESOLVED (set first band = `small`, ~5.6M)
+
+Benchmark: `scripts/bench_inference.py` (needs the `rl` extra). It builds the
+entity-token + pointer-head model from `docs/rl-obs-action.md` §5 at three size
+bands and times batched forward passes. **Run 1 is the laptop CPU *floor*** (the
+same weak i7-10610U as Run 1 above, 4 threads); GPU numbers are pending a Colab
+run (`--device cuda`).
+
+Per-**decision** latency (ms), batch=1, by token-count regime *(entities, options)*:
+
+| band | params (non-emb) | (16,20) typical | (24,60) busy | (30,256) worst |
+|---|--:|--:|--:|--:|
+| tiny (d128 L4) | 1.21M (0.85M) | 1.9 | 2.7 | 6.9 |
+| **small (d256 L6)** | **5.63M (4.91M)** | **3.4** | **8.8** | **24.9** |
+| medium (d384 L8) | 15.64M (14.55M) | 9.9 | 18.8 | 89.5 |
+
+Batching amortises a little on CPU (≈5–15% at batch 32) but CPU has no real batch
+parallelism — the GPU is where batching pays. Two conclusions, two different
+constraints:
+
+1. **Submission (CPU, per-turn budget) — `small` is safe, `medium` is risky.**
+   Kaggle grades on CPU, so per-decision latency is the binding constraint
+   (Lesson 9). Even on this floor CPU, `small` is ~3.4 ms/decision typical and
+   ~25 ms in the rare 256-option regime; at ~136 decisions/game that's well within
+   any plausible per-turn limit. `medium` hits ~90 ms/decision in the worst-case
+   regime — fine on average, but it argues for the winner's **tiny/heuristic
+   time-budget fallback** (P6.3) rather than shipping `medium` raw. (Per-turn time
+   limit itself is still TBD — re-pull competition pages in P6.1.)
+
+2. **Training throughput — inference goes on the GPU, decoupled; env stays the
+   bottleneck (to confirm on Colab).** The co-located-CPU "combined" figure the
+   script prints is a worst case, *not* the training ceiling. In training we run
+   CPU env workers in parallel with **batched GPU inference**, so the real ceiling
+   is `min(env_dec_s, gpu_infer_dec_s)`. With env at ~25K (L4) / ~81K (Blackwell)
+   dec/s and a 5.6M model batched on a real GPU, inference should clear that easily
+   — i.e. env stays the bottleneck, as Phase 0 predicted. **Action: run
+   `bench_inference.py --device cuda` on the L4 and Blackwell to fill in
+   `gpu_infer_dec_s` and confirm.**
+
+**Decision — first model-size band = `small` (d=256, L=6, h=8, ~5.6M params).**
+It matches the plan's "start ~1–5M to validate the pipeline" (Phase 2), is
+CPU-submission-safe today, and leaves clear headroom to scale (Phase 4: `medium`
+→ `large` → beyond, with GPU inference + quantisation for the bundle). `tiny`
+(1.2M) is reserved as the CPU time-budget fallback model (P6.3).
 
 ## Key findings
 
@@ -167,23 +212,46 @@ volume + side-swapping.**
   and set the "don't act below this n" floor from a measured A/A null (re-measure
   it here — it will be wider than Orbit Wars').
 
+**A/A null — MEASURED (2026-06-26).** `scripts/eval.py` (harness:
+`src/ptcg_battle/eval_harness.py`), champion = heuristic vs an **identical**
+heuristic, 1000 side-swapped games (500 each seat):
+
+| matchup | win rate | 95% Wilson CI | n (decisive) | notes |
+|---|--:|--:|--:|---|
+| **A/A null** (mirror) | **49.8%** | [46.7, 52.9] | 998 (2 draws) | dead-on 50% ⇒ side-swap cancels seat bias |
+| heuristic vs `random` | 95.7% | [94.3, 96.8] | 1000 | sanity floor |
+| heuristic vs `first` | 94.9% | [93.4, 96.1] | 1000 | sanity floor |
+
+The null sits **on 50%** (no detectable bias once seats are swapped), so the noise
+is pure Bernoulli sampling — Wilson half-width ±3.1 pp at n≈1000. **Don't-act
+floor: ~1,565 games/arm to call a 5 pp edge, ~4,356 for 3 pp** (80% power). So a
+real improvement must clear ~53% over ≥1.5K side-swapped games before we trust it;
+anything decided on a few hundred games is noise. (This is *tighter* than feared —
+side-swapping alone tamed the seat bias, so we did **not** end up wider than Orbit
+Wars at equal n; we just can't reduce n further with paired seeds.)
+
 ## Open items still in Phase 0
 
-- [ ] **P0.3 inference-cost probe** — needs `torch`; time a forward pass at
-      realistic token counts (board + up to ~1000 option tokens) on CPU/GPU to
-      confirm the per-turn time budget and feed the model-size ceiling. (Deferred
-      to start of Phase 1 after `uv add torch`.)
+- [x] **P0.3 inference-cost probe** — DONE (see the P0.3 section above).
+      `scripts/bench_inference.py`; CPU floor measured, first band set to `small`
+      (~5.6M). Remaining: run `--device cuda` on Colab to fill in GPU throughput.
 - [x] **P0.4 determinism / seeding** — resolved above: unseedable; compensate with
       high-n unpaired eval + side-swap.
 - [x] **P0.5 throughput characterized** across L4 / Blackwell (+ A100 by CPU
       equivalence). Env is *not* the bottleneck; runtime choice decided (L4 early,
-      Blackwell for Phase 4). First model-size band to be set with the P0.3 number.
+      Blackwell for Phase 4). First model-size band = `small` (~5.6M), set via P0.3.
 
 ## Bottom line
 
-Env throughput is **abundant and cheap** (~25K dec/s on the workhorse L4, ~81K on
-Blackwell) and scales cleanly with x86 cores — **not a blocker.** Two things to
-act on in the build: (1) **encode from the raw JSON dict**, not the dataclass tree
-(~2×); (2) the engine is **unseedable**, so **evaluate with high-n unpaired games
-+ side-swapping** rather than paired seeds — affordable precisely because games
-are so cheap. Remaining gate before Phase 2: the **P0.3 inference probe**.
+**Phase 0 is complete; all gates cleared.** Env throughput is **abundant and
+cheap** (~25K dec/s on the workhorse L4, ~81K on Blackwell) and scales cleanly
+with x86 cores — **not a blocker.** Policy inference (P0.3) is cheap enough that
+the env stays the bottleneck once batched on the GPU, and `small` (~5.6M) is
+CPU-submission-safe. Four things to carry into the build: (1) **encode from the
+raw JSON dict**, not the dataclass tree (~2×) — done, `src/ptcg_battle/encoding.py`;
+(2) the engine is **unseedable**, so **evaluate with high-n unpaired games +
+side-swapping** — done, `scripts/eval.py`; the measured **A/A null is 50.0% ±3.1pp
+at n≈1000**, floor ~1.5K games/arm for a 5 pp edge; (3) **first model band =
+`small`**, scale from there in Phase 4; (4) **run the GPU inference probe on Colab**
+to confirm the decoupled training ceiling. ⇒ **Cleared for Phase 2** (model
+skeleton + single-process PPO).

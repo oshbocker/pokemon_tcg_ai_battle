@@ -18,11 +18,20 @@ dev = [
     "jupyter",
     "ruff>=0.8",
     "pyright>=1.1.390",
+    "pytest>=8.0",  # prepare-gate test runner (encoding round-trip, eval-math units)
+]
+# RL stack. torch is heavy and CPU/GPU-build-specific, so it lives in its own
+# extra (never pulled by a bare `uv sync`). Install per runtime:
+#   CPU (local probe / tests):  uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   CUDA (Colab L4/Blackwell):  uv pip install torch --index-url https://download.pytorch.org/whl/cu121
+# then `uv sync --extra rl` to record it in the environment.
+rl = [
+    "torch>=2.2",
 ]
 
 [tool.uv]
-# For a CUDA build of torch (RL/IL agents), install torch first against the CUDA wheel index:
-#   uv pip install torch --index-url https://download.pytorch.org/whl/cu121 && uv sync
+# torch is deliberately unpinned to an index so the same `rl` extra resolves to
+# either the CPU or the CUDA wheel depending on the runtime (see the rl extra above).
 
 [tool.ruff]
 target-version = "py311"
@@ -47,11 +56,18 @@ ignore = [
 "scripts/local_selfplay.py" = ["SIM105", "E402", "I001"]
 
 [tool.pyright]
-include = ["src", "scripts"]
+include = ["src", "scripts", "tests"]
 exclude = ["outputs", "notebooks", "**/__pycache__", ".venv", "submissions"]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
-# kaggle / kaggle-environments / numpy ship partial-or-no stubs; don't drown in
-# missing-stub noise.
+# kaggle / kaggle-environments / numpy / torch ship partial-or-no stubs; don't
+# drown in missing-stub noise.
 reportMissingTypeStubs = false
 reportMissingModuleSource = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]  # import ptcg_battle without an editable install
+# Disable two stray ROS plugins (leaked onto PYTHONPATH from /opt/ros) that are
+# incompatible with pytest 9; our suite uses no pytest plugins of its own.
+addopts = "-q -p no:launch_testing -p no:launch_ros"

@@ -49,14 +49,32 @@ data/                             # gitignored — downloaded card metadata
   (`SelectContext`) says what decision is being made.
 - Submission bundle = `.tar.gz` with `main.py` at the **root** + `deck.csv` + `cg/`.
 
-## Lint & type-check
+## The `prepare` gate (run before every commit / submission)
+
+One command — format + lint + type-check + test — mirroring the Orbit Wars
+winner's `just prepare` (Lesson 10: scaffold the agentic loop). **Run it and get
+a green summary before committing.**
 
 ```bash
-uv run ruff check . && uv run ruff format . && uv run pyright
+uv run python scripts/prepare.py          # format-in-place, then lint/type/test
+uv run python scripts/prepare.py --check  # verify-only (CI / pre-submit)
+# `just prepare` / `just check` are aliases if you have `just` installed.
 ```
 
-Ruff (`E,F,I,UP,B,SIM`) and Pyright (`basic`) are configured in `pyproject.toml`;
-`basic` mode is intentional (kaggle / kaggle-environments ship partial stubs).
+It runs, in order: `ruff format` → `ruff check` (`E,F,I,UP,B,SIM`) → `pyright`
+(`basic` mode — kaggle/torch ship partial stubs) → `pytest`. All four are
+configured in `pyproject.toml`. Tests live in `tests/` (engine round-trip + eval
+math); torch is in the optional `rl` extra (`uv pip install torch ...`; see
+pyproject), so the encoding tests stay torch-free.
+
+## RL build artifacts (Phase 1+)
+
+- `src/ptcg_battle/encoding.py` — raw-dict → entity/option tensor encoder (the
+  hot-loop encoder; reads the JSON dict, never the dataclass). Contract spec:
+  `docs/rl-obs-action.md`; invariants: `tests/test_encoding.py`.
+- `src/ptcg_battle/eval_harness.py` + `scripts/eval.py` — high-n side-swapped
+  unpaired eval vs a fixed suite (engine is unseedable), resumable CSV, Wilson CIs.
+- `scripts/bench_inference.py` — P0.3 policy inference-cost probe (needs `rl` extra).
 
 ## Strategy & RL plan (read before building the agent)
 

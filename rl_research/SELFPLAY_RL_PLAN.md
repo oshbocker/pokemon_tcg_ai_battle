@@ -108,9 +108,12 @@ The make-or-break measurement. Findings logged in
       0–3. **Two action items found:** (a) throughput ∝ physical x86 cores ⇒ buy
       core count when renting; (b) `to_observation_class()` ~halves throughput ⇒
       **encode from the raw dict, not the dataclass tree** (~2× free).
-- [ ] **P0.3 Inference-cost probe.** Time a forward pass at realistic token
-      counts (board + up to ~1000 options) on CPU. Needs `torch` ⇒ deferred to
-      Phase 1 (`uv add torch`).
+- [x] **P0.3 Inference-cost probe.** `scripts/bench_inference.py` — entity-token
+      + pointer-head model at 3 size bands, batched forward passes. CPU floor
+      measured; **first band = `small` (d256/L6, ~5.6M)**, CPU-submission-safe.
+      Training inference goes batched on GPU (decoupled from CPU envs) ⇒ env stays
+      the bottleneck. GPU number pending a Colab `--device cuda` run. See
+      `PHASE0_THROUGHPUT.md` P0.3.
 - [x] **P0.4 Determinism & seedability — RESOLVED: engine is unseedable.** Links
       `std::random_device`→`mt19937`, no seed export; identical game in 3 fresh
       procs → 3 different outcomes. **No paired-seed eval.** Mitigation: high-n
@@ -120,24 +123,33 @@ The make-or-break measurement. Findings logged in
       by CPU equivalence). Env is *not* the bottleneck; runtime choice decided.
       First model-size band pending the P0.3 inference number.
 
-**Exit criteria:** ✅ throughput measured, ✅ seeding resolved, ⏳ first model-size
-band (needs P0.3 inference probe — first task of Phase 1).
+**Exit criteria:** ✅ throughput measured, ✅ seeding resolved, ✅ first model-size
+band set (`small`, ~5.6M, via P0.3). **Phase 0 COMPLETE — cleared for Phase 2.**
+(One follow-up: confirm GPU inference throughput on Colab.)
 
-## Phase 1 — Scaffolding & contracts (≈3–4 days, parallel with P0)
+## Phase 1 — Scaffolding & contracts ✅ DONE (2026-06-26)
 
 Set up the agentic-dev guardrails (Lesson 10) so later code generation stays clean.
+Log: [`PHASE1_SCAFFOLDING.md`](./PHASE1_SCAFFOLDING.md).
 
-- [ ] **P1.1 `prepare` gate.** One command: `ruff` + `pyright` + tests +
-      doc-freshness (mirror the winner's `just prepare`). Wire into CLAUDE.md.
-- [ ] **P1.2 `rl_research/` as the experiment log** (this dir). Every experiment
-      gets a dated entry; dead-ends recorded (our best Orbit Wars habit).
-- [ ] **P1.3 Observation/action contract doc** (`docs/rl-obs-action.md`): the
-      exact tensor encoding of `Observation` → tokens and `option` → candidate
-      tokens. This is the spec agents implement against.
-- [ ] **P1.4 Parity/encoding tests:** round-trip a real `obs_dict` through the
-      encoder and assert invariants (every legal option maps to exactly one
-      candidate token; masks correct; multi-pick handled).
-- [ ] **P1.5 Add `torch` to deps** (`uv add torch`), with a CPU/GPU note.
+- [x] **P1.1 `prepare` gate.** `scripts/prepare.py` (+ `justfile`): `ruff format`
+      → `ruff check` → `pyright` → `pytest`, fail-fast summary. Wired into
+      CLAUDE.md as the canonical pre-commit/pre-submit command.
+- [x] **P1.2 `rl_research/` as the experiment log** (this dir). Phase-0/1 entries
+      dated; dead-ends recorded.
+- [x] **P1.3 Observation/action contract doc** (`docs/rl-obs-action.md`): the
+      exact raw-dict → entity/option token encoding, card-ID embedding, pointer
+      head, multi-pick. Implemented in `src/ptcg_battle/encoding.py`.
+- [x] **P1.4 Parity/encoding tests** (`tests/test_encoding.py`, 9 tests): the
+      1:1 option→candidate invariant, target-link bounds, ID-vocab bounds vs the
+      live engine, finite features, determinism, multi-pick, and an independent
+      dataclass cross-check. All green.
+- [x] **P1.5 Add `torch` to deps.** Optional `rl` extra (CPU/CUDA install note in
+      `pyproject.toml`); encoder + tests stay torch-free.
+
+**Also delivered early (Phase 5 skeleton, P5.2/P5.3):** `scripts/eval.py` +
+`src/ptcg_battle/eval_harness.py` — high-n side-swapped unpaired eval, resumable
+CSV, Wilson CIs; **A/A null measured = 50.0% ±3.1pp** (see P0.4 / `PHASE0`).
 
 ## Phase 2 — Observation/action encoding + model skeleton (≈1 week)
 
@@ -220,13 +232,16 @@ Our strongest Orbit Wars habit (Lesson 6). Build the skeleton in Phase 2.
 
 - [ ] **P5.1 Fixed honest opponent suite:** heuristic agent, mirror, random, and
       the strongest public kernels (Crustle wall, Dragapult — in `outputs/kernels`).
-- [ ] **P5.2 High-n unpaired + side-swapped eval** (engine is unseedable — see
-      P0.4 — so no paired seeds). Side-swap seats to cancel first-player bias;
-      report Wilson/binomial CIs. Sizing: ~1.5K games/arm for a 5 pp edge, ~4.3K
-      for 3 pp — cheap given throughput. Re-measure the A/A null (wider than Orbit
-      Wars) and set the "don't act below this n" floor from it.
-- [ ] **P5.3 Resumable CSV results + a single `eval` command.** Track every
-      checkpoint. The eval suite is the source of truth, not training reward.
+- [x] **P5.2 High-n unpaired + side-swapped eval** — DONE
+      (`src/ptcg_battle/eval_harness.py`). Side-swap cancels first-player bias;
+      Wilson CIs; `games_for_edge()` sizing (~1.5K/arm for 5 pp, ~4.3K for 3 pp).
+      **A/A null measured = 50.0% ±3.1pp at n≈1000** ⇒ don't-act floor ~1.5K
+      games/arm. (Came in *on* 50%, not wider than Orbit Wars — side-swap sufficed.)
+- [x] **P5.3 Resumable CSV results + a single `eval` command** — DONE
+      (`scripts/eval.py`). Re-running tops up to `--games`; the suite (mirror,
+      random, first today; heuristic/kernels/model later) is the source of truth.
+- [ ] **P5.1 Fixed honest opponent suite — extend** with the strongest public
+      kernels (Crustle wall, Dragapult) once a trained `model:<path>` agent exists.
 
 ## Phase 6 — Submission engineering (≈1 week before deadline; design-aware throughout)
 
