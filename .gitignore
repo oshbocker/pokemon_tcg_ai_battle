@@ -1,0 +1,47 @@
+# Generated outputs — caches, downloaded replays/leaderboards, agent logs
+outputs/cache/
+outputs/leaderboard/
+outputs/replays/
+outputs/episodes/
+outputs/discussions/
+outputs/kernels/
+outputs/logs/
+
+# Keep the placeholder
+!outputs/.gitkeep
+
+# Built submission bundles (rebuild from source)
+submissions/
+*.tar.gz
+
+# Competition data files (card metadata PDFs/CSVs — re-download via the API)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+# ...but the cabt Linux engine must be tracked so Colab clones can run it
+# (the Windows cg.dll is already tracked; keep the Linux .so alongside it)
+!agent/cg/libcg.so
+*.egg-info/
+dist/
+build/
+.env
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Kaggle credentials — never commit
+kaggle.json
+
+# Local Claude Code settings (keep shared skills versioned)
+.claude/*
+!.claude/skills/
+
+# Tooling caches
+.ruff_cache/
+.pyright/
