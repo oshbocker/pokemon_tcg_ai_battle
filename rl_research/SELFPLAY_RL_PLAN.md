@@ -33,9 +33,12 @@ do not pre-declare a ceiling; let measured scaling curves tell us when to stop.
 - **Phases 0–3 run on Colab — preferring the cheap L4 runtime.** Rollout is
   CPU-bound and the L4 has the *same 12 vCPU as the A100* (~25K env dec/s) at ~10×
   lower credit burn (~1.54 vs ~15 units/hr → ~520 hrs from ~800 units). GPU isn't
-  the bottleneck for small models, so spend credits on L4 here; reach for
-  A100/Blackwell only when GPU compute dominates (Phase 4). (Premium GPUs are also
-  scarce on Colab — H100→Blackwell, A100→L4 downgrades observed.) See
+  the bottleneck for small models, so spend credits on L4 here.
+- **Phase 4 GPU-bound work → Blackwell/EPYC runtime; skip the A100.** Blackwell
+  dominates A100 for us on every axis (96 GB GPU, 48 vCPU, 3.2× rollout to ~81K
+  dec/s) **and is cheaper per hour** (8.9 vs ~15 units). A100 = worst value (same
+  CPU as L4 at 10× cost). Convenient: Blackwell + L4 are exactly what Colab *falls
+  back to* when H100/A100 are unavailable. See
   [`PHASE0_THROUGHPUT.md`](./PHASE0_THROUGHPUT.md) "Compute economics".
 - **Phase 4 scaling is gated on demonstrated progress.** Budget is up to
   **~10 × $200–500 (≈ $2K–5K)** of cloud bursts, released **only when each prior

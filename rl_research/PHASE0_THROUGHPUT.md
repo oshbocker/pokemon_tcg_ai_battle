@@ -30,23 +30,23 @@ runtime — **note: H100 can be hard to get on Colab**, plan around it. The host
 no slouch: **AMD EPYC 9B45, 48 vCPU / 24 physical cores, 176 GB RAM.** Policy
 `first`. ~136 decisions/game.
 
+Burns **~8.9 units/hr**. Full sweep (`--procs 1..64`, `first`):
+
 | workers | games/s | decisions/s | notes |
 |--:|--:|--:|--:|
-| 1 | 80.9 | 10,946 | 2.3× the laptop core |
-| 2 | 134.0 | 18,379 | |
-| 4 | 164.3 | 22,405 | |
-| 6 | 214.3 | 29,318 | |
-| 8 | 268.6 | 36,490 | |
-| 12 | 373.0 | 50,649 | |
-| 16 | 462.9 | **63,347** | **still climbing — not the peak** |
+| 1 | 83.8 | 11,394 | 2.5× the laptop core |
+| 4 | 165.9 | 22,455 | |
+| 8 | 269.6 | 36,397 | |
+| 16 | 466.6 | 63,622 | |
+| 24 | 579.1 | 78,717 | **= physical cores; ~97% of peak** |
+| 32 | 588.9 | 80,434 | |
+| 48 | 599.0 | **81,341** | peak (= vCPU; HT adds only ~3% over 24) |
+| 64 | 595.0 | 81,035 | oversubscription, flat-down |
 
-`--parse` at 8 workers: 28,589 dec/s vs 36,490 (≈22% tax — smaller than the
-laptop's ~50% because the box is far from saturated at 8/48 vCPU).
-
-**⚠ We undershot the sweep — it never peaked (monotonic to 16, and 24 physical
-cores remain). Re-run `--procs 16,24,32,48` to find the real ceiling.** Unlike the
-laptop, server silicon kept scaling well past the laptop's early peak, so the
-"hyperthreads hurt" finding is **laptop-specific**, not general.
+**Peak ~81K dec/s ≈ 7 B decisions/day** (engine-only). Plateaus at **24 workers
+(physical cores)** — HT contributes only ~3%, so set `--procs ≈ physical cores`
+here. `--parse` at 24 workers: 68,441 vs 78,717 (≈13% — again understated because
+24/48 vCPU isn't saturated; the saturated tax is ~46%, see Run 3).
 
 ## Run 3 — Colab L4 runtime (2026-06-26)
 
@@ -73,21 +73,25 @@ these cloud Xeon/EPYC parts (peak at vCPU count, not physical-core count) — ag
 
 ## Compute economics (the Run 3 punchline)
 
-Rollout is **CPU-bound**, and **L4 and A100 runtimes have the same 12 vCPU** ⇒
-**identical env throughput (~25K dec/s)**. But the L4 is ~10× cheaper in Colab
-compute units:
+Rollout is **CPU-bound**, so the right metric is **decisions per compute unit**
+(env-only), not raw speed. Measured Colab numbers (budget: **~803 units**):
 
-| runtime | vCPU | env dec/s (peak) | units/hr | hrs from ~800 units |
-|---|--:|--:|--:|--:|
-| **L4** | 12 | ~25K | **~1.54** | **~520 hrs** |
-| A100 | 12 | ~25K (same CPU) | ~15 (typical) | ~53 hrs |
-| Blackwell/EPYC | 48 | 63K+ (TBD) | higher | fewer |
+| runtime | vCPU | env dec/s (peak) | units/hr | **M dec / unit** | hrs from ~800u |
+|---|--:|--:|--:|--:|--:|
+| **L4** | 12 | ~25K | ~1.54 | **~58** ← best value | ~520 |
+| **Blackwell/EPYC** | 48 | ~81K | ~8.9 | **~33** | ~90 |
+| A100 | 12 | ~25K (same CPU) | ~15 | ~6 ← worst | ~53 |
 
-⇒ **Use the L4 for Phases 0–3** (small models — GPU is not the bottleneck;
-conserve credits, get ~520 hrs of runtime). **Move to A100/Blackwell only in
-Phase 4**, when the model is large enough that GPU forward/backward dominates —
-and prefer the **48-vCPU Blackwell** there, since it also lifts the rollout
-ceiling. Current budget: **~803 units** ≈ 520 L4-hrs.
+Two clear conclusions:
+
+1. **L4 for Phases 0–3** (env-bound, small models). Most decisions per unit (~58M),
+   ~520 hrs of runtime. GPU isn't the bottleneck yet.
+2. **Blackwell for Phase 4** (GPU-bound, big models) — **and skip the A100
+   entirely.** Blackwell dominates A100 on *every* axis for us: stronger GPU
+   (96 GB Blackwell vs 40/80 GB Ampere), 4× the vCPU (48 vs 12), 3.2× rollout, **and
+   cheaper per hour** (8.9 vs ~15). The A100 is the worst value here — same CPU as
+   the free-ish L4 at 10× the cost. (Both Blackwell and L4 are what Colab *gives*
+   when H100/A100 are unavailable, so availability favors exactly the two we want.)
 
 > Caveat: measured dec/s is *engine-only* (trivial policy). Real throughput drops
 > once policy inference is added — that's the still-pending **P0.3** probe (needs
