@@ -227,8 +227,24 @@ class KaggleClient:
 
     # -- episodes / replays -------------------------------------------------
 
+    def leaderboard_show(self) -> str:
+        """Public ladder WITH team IDs (the CSV download omits teamId).
+
+        Use the printed ``teamId`` with :meth:`team_submissions` to reach any
+        team's active submissions, then their episodes and replays.
+        """
+        return self._cli("competitions", "leaderboard", self.competition, "--show")
+
+    def team_submissions(self, team_id: int | str) -> str:
+        """List another team's active (public) submissions in this sim competition.
+
+        Gateway to other teams' replays: leaderboard ``--show`` -> teamId ->
+        ``team_submissions`` -> ``list_episodes`` -> ``download_replay``.
+        """
+        return self._cli("competitions", "team-submissions", str(team_id))
+
     def list_episodes(self, submission_id: int | str) -> str:
-        """List episodes (games) played by one of our submissions (CLI)."""
+        """List episodes (games) played by a submission (ours or any team's)."""
         return self._cli("competitions", "episodes", str(submission_id))
 
     def download_replay(self, episode_id: int | str, dest: Path | None = None) -> Path:

@@ -27,7 +27,7 @@ dev = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-extend-exclude = ["outputs", "notebooks", ".venv", "submissions"]
+extend-exclude = ["outputs", "notebooks", ".venv", "submissions", "agent/cg", "data"]
 
 [tool.ruff.lint]
 # E/F = pyflakes+pycodestyle, I = isort, UP = pyupgrade,
@@ -37,6 +37,14 @@ ignore = [
     "E501",   # line length is handled by the formatter
     "B008",   # function calls in argument defaults (common for configs)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# agent/main.py is the submitted artifact built on the proven sample policy;
+# keep the hand-tuned nested scoring branches verbatim (don't collapse with SIM).
+"agent/main.py" = ["SIM102", "SIM109"]
+# cg.* must be imported after sys.path/chdir setup, so its imports are
+# intentionally not at module top and not sortable with the rest.
+"scripts/local_selfplay.py" = ["SIM105", "E402", "I001"]
 
 [tool.pyright]
 include = ["src", "scripts"]

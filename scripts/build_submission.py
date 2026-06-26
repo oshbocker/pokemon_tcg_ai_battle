@@ -36,11 +36,18 @@ def build(main: Path, deck: Path, cg: Path, out: Path) -> Path:
     if len(lines) != 60:
         raise ValueError(f"deck must have exactly 60 Card IDs, got {len(lines)}")
 
+    def _no_pycache(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        # Strip caches/compiled artifacts — some validators reject them.
+        base = Path(info.name).name
+        if "__pycache__" in Path(info.name).parts or base.endswith((".pyc", ".pyo")):
+            return None
+        return info
+
     out.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(out, "w:gz") as tar:
         tar.add(main, arcname="main.py")
         tar.add(deck, arcname="deck.csv")
-        tar.add(cg, arcname="cg")
+        tar.add(cg, arcname="cg", filter=_no_pycache)
 
     with tarfile.open(out, "r:gz") as tar:
         names = tar.getnames()

@@ -10,7 +10,9 @@
     uv run python scripts/kaggle_tool.py topic 708586                       # read a thread
     uv run python scripts/kaggle_tool.py pages --save                       # rules -> outputs/pages
     uv run python scripts/kaggle_tool.py files
-    uv run python scripts/kaggle_tool.py episodes <submission_id>
+    uv run python scripts/kaggle_tool.py leaderboard --show           # ladder WITH team IDs
+    uv run python scripts/kaggle_tool.py team-submissions <team_id>   # any team's submissions
+    uv run python scripts/kaggle_tool.py episodes <submission_id>     # ours OR another team's
     uv run python scripts/kaggle_tool.py replay <episode_id>
     uv run python scripts/kaggle_tool.py logs <episode_id> 0
 
@@ -35,8 +37,15 @@ def main() -> None:
 
     p = sub.add_parser("leaderboard", help="download + print the public ladder")
     p.add_argument("--top", type=int, default=20)
+    p.add_argument("--show", action="store_true", help="show team IDs (for team-submissions)")
 
     sub.add_parser("submissions", help="list our team's submissions")
+
+    p = sub.add_parser(
+        "team-submissions",
+        help="list another team's active submissions (find teamId via leaderboard --show)",
+    )
+    p.add_argument("team_id")
 
     p = sub.add_parser("submit", help="submit a submission.tar.gz bundle")
     p.add_argument("bundle")
@@ -79,8 +88,13 @@ def main() -> None:
     kg = KaggleClient()
 
     if args.cmd == "leaderboard":
-        for rank, team, score in kg.leaderboard_top(args.top):
-            print(f"{rank:>5}  {score:>8.1f}  {team}")
+        if args.show:
+            print(kg.leaderboard_show())
+        else:
+            for rank, team, score in kg.leaderboard_top(args.top):
+                print(f"{rank:>5}  {score:>8.1f}  {team}")
+    elif args.cmd == "team-submissions":
+        print(kg.team_submissions(args.team_id))
     elif args.cmd == "submissions":
         for s in kg.list_submissions():
             print(
