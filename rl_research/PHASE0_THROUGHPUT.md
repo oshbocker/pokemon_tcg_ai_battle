@@ -48,6 +48,51 @@ cores remain). Re-run `--procs 16,24,32,48` to find the real ceiling.** Unlike t
 laptop, server silicon kept scaling well past the laptop's early peak, so the
 "hyperthreads hurt" finding is **laptop-specific**, not general.
 
+## Run 3 — Colab L4 runtime (2026-06-26)
+
+Asked for A100; **downgraded to L4** (premium GPUs keep being scarce: H100→Blackwell,
+A100→L4). Host: **12 vCPU (≈6 physical cores)** — *same vCPU count as the A100
+runtime*. Policy `first`. ~136 decisions/game.
+
+| workers | games/s | decisions/s | notes |
+|--:|--:|--:|--:|
+| 1 | 30.1 | 4,019 | |
+| 4 | 117.5 | 16,058 | |
+| 6 | 166.5 | 22,665 | |
+| 8 | 174.7 | 23,618 | plateau begins |
+| 12 | 184.1 | **25,026** | peak (all vCPUs; HT *helps* here) |
+| 16 | 176.6 | 24,182 | slight oversubscription drop |
+
+`--parse` near saturation: **12,819 dec/s @ 8 workers vs 23,618 (≈46% — parsing
+~halves throughput when the box is busy).** This confirms the laptop result and
+kills the small-tax illusion from Run 2 (where the 48-vCPU box was half-idle).
+
+Operational: on a 12-vCPU box, run **~12 workers** (8–12 is flat). HT helps on
+these cloud Xeon/EPYC parts (peak at vCPU count, not physical-core count) — again,
+**measure per box**.
+
+## Compute economics (the Run 3 punchline)
+
+Rollout is **CPU-bound**, and **L4 and A100 runtimes have the same 12 vCPU** ⇒
+**identical env throughput (~25K dec/s)**. But the L4 is ~10× cheaper in Colab
+compute units:
+
+| runtime | vCPU | env dec/s (peak) | units/hr | hrs from ~800 units |
+|---|--:|--:|--:|--:|
+| **L4** | 12 | ~25K | **~1.54** | **~520 hrs** |
+| A100 | 12 | ~25K (same CPU) | ~15 (typical) | ~53 hrs |
+| Blackwell/EPYC | 48 | 63K+ (TBD) | higher | fewer |
+
+⇒ **Use the L4 for Phases 0–3** (small models — GPU is not the bottleneck;
+conserve credits, get ~520 hrs of runtime). **Move to A100/Blackwell only in
+Phase 4**, when the model is large enough that GPU forward/backward dominates —
+and prefer the **48-vCPU Blackwell** there, since it also lifts the rollout
+ceiling. Current budget: **~803 units** ≈ 520 L4-hrs.
+
+> Caveat: measured dec/s is *engine-only* (trivial policy). Real throughput drops
+> once policy inference is added — that's the still-pending **P0.3** probe (needs
+> `torch`). On the L4, batch inference across the 12 workers on its GPU.
+
 ## Key findings
 
 1. **Throughput scales with x86 cores — and on server silicon keeps climbing

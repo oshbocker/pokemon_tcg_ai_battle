@@ -30,8 +30,13 @@ do not pre-declare a ceiling; let measured scaling curves tell us when to stop.
 
 **Compute decisions (2026-06):**
 
-- **Phases 0–3 run entirely on Colab (A100/H100 credits)** — pipeline build,
-  small-model proof, first self-play runs. Free/owned credits; no cash spend.
+- **Phases 0–3 run on Colab — preferring the cheap L4 runtime.** Rollout is
+  CPU-bound and the L4 has the *same 12 vCPU as the A100* (~25K env dec/s) at ~10×
+  lower credit burn (~1.54 vs ~15 units/hr → ~520 hrs from ~800 units). GPU isn't
+  the bottleneck for small models, so spend credits on L4 here; reach for
+  A100/Blackwell only when GPU compute dominates (Phase 4). (Premium GPUs are also
+  scarce on Colab — H100→Blackwell, A100→L4 downgrades observed.) See
+  [`PHASE0_THROUGHPUT.md`](./PHASE0_THROUGHPUT.md) "Compute economics".
 - **Phase 4 scaling is gated on demonstrated progress.** Budget is up to
   **~10 × $200–500 (≈ $2K–5K)** of cloud bursts, released **only when each prior
   burst shows real self-play progress with leaderboard results to back it up.**
