@@ -129,6 +129,13 @@ invariant (`test_one_candidate_token_per_legal_option`). Per candidate:
   pointer can attend option→target (e.g. ATTACH energy → the receiving Pokémon).
   Never −1 in the output: options with no board referent (END, YES/NO, NUMBER,
   RETREAT) fall back to the **global token index**, guaranteeing a valid key.
+- `opt_rank: int64` — the option's **index in the engine's enumeration**, clamped to
+  `N_OPTION_RANK−1` (= 63). The engine sorts `select.option` strong→weak — returning
+  option 0 ("B1") beats random ~88–90% (Kaggle #713608) — and a pointer head is
+  permutation-invariant, so without this it discards the engine's prior. **Ablatable:
+  the encoder always emits it; the model gates it with a `use_option_rank` flag** (a
+  learned positional embedding added to candidate tokens), so we can A/B whether it
+  helps. See `rl_research/PHASE1_RESEARCH.md`.
 
 Card resolution per `OptionType` (raw-dict analogue of `main.py:get_card`):
 
@@ -162,7 +169,8 @@ categorical embeddings and a linear projection of its numeric features:
   with `global_feat` projected onto the GLOBAL token.
 - candidate: `opt_type_emb + area_emb + inplay_area_emb + card_emb + attack_emb +
   special_emb + Linear(opt_feat)`, **plus the embedding of its `opt_target`
-  entity token** (the option→target link).
+  entity token** (the option→target link), **and — when `use_option_rank` is on —
+  a learned `opt_rank` positional embedding** (the engine's best→worst prior).
 
 Run all tokens through a shared transformer (Phase 2 starts ~6–12 blocks,
 `d_model` 256–512; sizing gated by the P0.3 inference probe). Include a couple of
@@ -202,3 +210,4 @@ observation (same as the policy).
 7. `0 ≤ min_count ≤ max_count ≤ n_options`; a multi-pick decision is present in
    the fixture.
 8. Declared vocab sizes still bound the live engine.
+9. `opt_rank == clamp(arange(n_options), N_OPTION_RANK−1)` (the engine-order prior).

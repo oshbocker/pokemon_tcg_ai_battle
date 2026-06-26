@@ -49,6 +49,16 @@ N_OPTION_TYPE = 17  # OptionType 0..16
 N_SELECT_CONTEXT = 49  # SelectContext 0..48 (engine may append; see assert in tests)
 N_SPECIAL_COND = 6  # 0 = none, 1..5 = POISON..CONFUSE (SpecialConditionType + 1)
 
+# Engine option ordering as a positional vocab. The engine enumerates `select.option`
+# in a strong best->worst order — returning option [0] ("B1") beats random ~88-90%
+# (Kaggle #713608; see rl_research/PHASE1_RESEARCH.md). A pointer head is
+# permutation-invariant and would discard that prior, so we expose each option's
+# rank (its index, clamped) for an OPTIONAL learned positional embedding. The
+# ordering signal concentrates at the top, so 64 buckets cover it; rank >= 63 -> 63.
+# This is ABLATABLE: the encoder always emits `opt_rank`, but the model gates it via
+# its `use_option_rank` flag so we can A/B whether it actually helps.
+N_OPTION_RANK = 64
+
 # Entity roles (categorical embedding for "what kind of token is this").
 ROLE_PAD = 0
 ROLE_OWN_ACTIVE = 1
@@ -134,6 +144,7 @@ class EncodedObs:
     opt_special: np.ndarray  # int64[n_options]  (SpecialConditionType + 1, 0 = none)
     opt_feat: np.ndarray  # float32[n_options, OPTION_FEAT_DIM]
     opt_target: np.ndarray  # int64[n_options]  (entity-token index this option acts on, -1 = none)
+    opt_rank: np.ndarray  # int64[n_options]  (engine option index, clamped to N_OPTION_RANK-1)
     # --- globals / decision context ---
     global_feat: np.ndarray  # float32[GLOBAL_FEAT_DIM]
     context: int  # SelectContext of this decision
@@ -355,6 +366,8 @@ def encode_observation(obs: dict) -> EncodedObs:
     opt_special = np.zeros(m, dtype=np.int64)
     opt_feat = np.zeros((m, OPTION_FEAT_DIM), dtype=np.float32)
     opt_target = np.full(m, -1, dtype=np.int64)
+    # Engine option order (the best->worst prior); clamped for the positional vocab.
+    opt_rank = np.minimum(np.arange(m, dtype=np.int64), N_OPTION_RANK - 1)
 
     for i, o in enumerate(options):
         t = o.get("type", -1)
@@ -441,6 +454,7 @@ def encode_observation(obs: dict) -> EncodedObs:
         opt_special=opt_special,
         opt_feat=opt_feat,
         opt_target=opt_target,
+        opt_rank=opt_rank,
         global_feat=gf,
         context=int(select.get("context", -1)),
         min_count=int(select.get("minCount", 1)),

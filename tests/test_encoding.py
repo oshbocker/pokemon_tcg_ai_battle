@@ -115,6 +115,17 @@ def test_attack_options_carry_attack_id(obs_samples):
                 assert enc.opt_attack[i] > 0
 
 
+def test_option_rank_is_clamped_engine_order(obs_samples):
+    """opt_rank is the engine option index, clamped to the positional vocab — the
+    best->worst prior the (permutation-invariant) pointer head would otherwise lose."""
+    for obs in obs_samples:
+        enc = encode_observation(obs)
+        expected = np.minimum(np.arange(enc.n_options), E.N_OPTION_RANK - 1)
+        assert np.array_equal(enc.opt_rank, expected)
+        if enc.n_options:
+            assert enc.opt_rank.min() >= 0 and enc.opt_rank.max() < E.N_OPTION_RANK
+
+
 def test_multipick_counts_carried(obs_samples):
     """maxCount>1 decisions preserve the engine's count bounds (never exceeding
     the option list), so the model's multi-pick head has the right constraints."""

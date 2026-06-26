@@ -117,14 +117,18 @@ Batching amortises a little on CPU (≈5–15% at batch 32) but CPU has no real 
 parallelism — the GPU is where batching pays. Two conclusions, two different
 constraints:
 
-1. **Submission (CPU, per-turn budget) — `small` is safe, `medium` is risky.**
-   Kaggle grades on CPU, so per-decision latency is the binding constraint
-   (Lesson 9). Even on this floor CPU, `small` is ~3.4 ms/decision typical and
-   ~25 ms in the rare 256-option regime; at ~136 decisions/game that's well within
-   any plausible per-turn limit. `medium` hits ~90 ms/decision in the worst-case
-   regime — fine on average, but it argues for the winner's **tiny/heuristic
-   time-budget fallback** (P6.3) rather than shipping `medium` raw. (Per-turn time
-   limit itself is still TBD — re-pull competition pages in P6.1.)
+1. **Submission — latency is NOT the binding constraint; RAM + bundle size are.**
+   The Kaggle inference budget is **600 s for the *whole game*** (no per-turn cap),
+   on **1.6 vCPU / 8 GB RAM, CPU-only** (forum #708810; see `PHASE1_RESEARCH.md`).
+   With ~136 decisions/game that's ~4.4 s/decision of headroom — *enormous*. A whole
+   game of `small` inference is well under 1 s; `medium` a few seconds; even a
+   ~100–200 M model fits inside 600 s on 1.6 vCPU. So the model-size ceiling at
+   submission is set by **8 GB RAM + the bundle/file-size cap** (confirm in P6.1;
+   the Orbit Wars winner needed NF4 quant to fit 100 MiB), **not** by per-decision
+   latency. (This corrects an earlier draft that treated latency as the cap — it
+   isn't, which makes the Phase-4 scaling bet *more* viable, not less.) A
+   tiny/heuristic time-budget fallback (P6.3) is still worth having as insurance,
+   but it's no longer load-bearing for `small`/`medium`.
 
 2. **Training throughput — inference goes on the GPU, decoupled; env stays the
    bottleneck (to confirm on Colab).** The co-located-CPU "combined" figure the
@@ -137,10 +141,12 @@ constraints:
    `gpu_infer_dec_s` and confirm.**
 
 **Decision — first model-size band = `small` (d=256, L=6, h=8, ~5.6M params).**
-It matches the plan's "start ~1–5M to validate the pipeline" (Phase 2), is
-CPU-submission-safe today, and leaves clear headroom to scale (Phase 4: `medium`
-→ `large` → beyond, with GPU inference + quantisation for the bundle). `tiny`
-(1.2M) is reserved as the CPU time-budget fallback model (P6.3).
+It matches the plan's "start ~1–5M to validate the pipeline" (Phase 2), trivially
+fits the 600 s/game CPU budget, and leaves clear headroom to scale (Phase 4:
+`medium` → `large` → beyond, with quantisation only when the bundle/RAM cap forces
+it). We chose `small` over `tiny` deliberately for the extra capacity headroom now
+that latency is a non-issue. `tiny` (1.2M) is kept as the optional time-budget
+fallback model (P6.3).
 
 ## Key findings
 

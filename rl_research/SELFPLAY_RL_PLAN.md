@@ -153,28 +153,26 @@ CSV, Wilson CIs; **A/A null measured = 50.0% ±3.1pp** (see P0.4 / `PHASE0`).
 
 ## Phase 2 — Observation/action encoding + model skeleton (≈1 week)
 
-Low-level, entity-based, pointer head (Lessons 3, 4). Start **small** (~1–5M
-params) to validate the pipeline before scaling.
+Low-level, entity-based, pointer head (Lessons 3, 4). Start **small** (~5.6M
+params, decided in P0.3) to validate the pipeline before scaling. Model:
+`src/ptcg_battle/model.py` (`PtcgNet`); preceded by the P1 representation research
+(`PHASE1_RESEARCH.md`) — card-ID embedding is load-bearing (externally confirmed),
+and the engine's option order is fed as the ablatable `opt_rank` feature.
 
-- [ ] **P2.1 Entity tokenization.** Tokens for: own/opp **active** & **bench**
-      Pokémon (HP, energies, status, stage, tool), **hand** cards (own), **board
-      summary** tokens (prizes left each side, deck counts, hand count, turn,
-      stadium, who's-deciding), and a learned token per **legal option** in
-      `obs.select.option` (encode `OptionType`, `area`, target card/Pokémon
-      identity, `attackId`, `number`). Card identity via a learned **card-ID
-      embedding** (≈1300 cards) — this is where card knowledge lives, learned not
-      hand-coded.
-- [ ] **P2.2 Shared transformer trunk** over all tokens (start: ~6–12 blocks,
-      d=256–512, like the winner's structure but sized to our compute). Include a
-      few learned **summary/scratch tokens** (his trick — a global workspace).
-- [ ] **P2.3 Pointer actor head.** Score each option token by attention against a
-      "decision" token (`Q·K/√d`), softmax over the *current legal option set*.
-      For **multi-pick** decisions (`maxCount > 1`): autoregressive selection or
-      independent Bernoulli per option with a count constraint — decide in P2.1
-      doc. Legality is free (only legal options are tokens).
-- [ ] **P2.4 Critic head.** Win-probability from a value token (sigmoid → value
-      in [-1,1]). POMDP ⇒ critic sees only the observation (acceptable; matches
-      what the policy sees).
+- [x] **P2.1 Entity tokenization** — DONE in P1.3/P1.4 (`encoding.py`): own/opp
+      active & bench, own hand, stadium, a global board-summary token, and one
+      candidate token per legal option, all keyed by a learned **card-ID
+      embedding** (1267 cards). Contract: `docs/rl-obs-action.md`.
+- [x] **P2.2 Shared transformer trunk** — DONE (`PtcgNet._encode`): id + numeric
+      embeddings → `TransformerEncoder` (small = 6 blocks, d=256, h=8), board
+      `global_feat` broadcast onto every token as the global workspace.
+- [x] **P2.3 Pointer actor head** — DONE: scaled dot-product of a context query
+      (pooled trunk + `SelectContext`) against candidate tokens; legality free (no
+      mask). **Multi-pick** = autoregressive pointer with a learned STOP key,
+      honoring `min/maxCount` (validated in `tests/test_model.py`).
+- [x] **P2.4 Critic head** — DONE: value token (masked-mean pool) → `tanh` ∈
+      [-1,1]. POMDP ⇒ critic sees only the observation. Overfit-one-batch probe
+      confirms capacity (not the bottleneck — matches Kaggle #713608).
 - [ ] **P2.5 Single-process rollout + PPO update** wired end to end on the small
       model. Goal: **learn to beat the random agent decisively**, sanity-checking
       the whole loop before any scale.
