@@ -84,29 +84,36 @@ From recon of `agent/cg/` and `scripts/local_selfplay.py`:
 
 ---
 
-## Phase 0 — Throughput & feasibility spike (≈3–4 days) ⟵ do this before anything else
+## Phase 0 — Throughput & feasibility spike ⟵ IN PROGRESS
 
-The make-or-break measurement. Everything downstream depends on it.
+The make-or-break measurement. Findings logged in
+[`PHASE0_THROUGHPUT.md`](./PHASE0_THROUGHPUT.md). Benchmark:
+`scripts/bench_throughput.py`.
 
-- [ ] **P0.1 Measure raw env throughput.** Extend `local_selfplay.py` into a
-      benchmark: games/sec for 1 process, then N processes
-      (`multiprocessing.Pool`, one `battle_ptr` per process). Find the saturation
-      point on our hardware. Report **decisions/sec** (the real RL sample rate).
-- [ ] **P0.2 Decision-rate budget.** With ~100 decisions/game, target sample
-      counts: e.g. if we hit 40 games/s aggregate → ~4K decisions/s → ~350M
-      decisions/day. Sanity-check that against plausible PPO needs and write the
-      number down. **This determines whether large models are even on the table.**
-- [ ] **P0.3 Inference-cost probe.** Time a forward pass of a small/medium
-      transformer on CPU at realistic token counts (board + up to ~1000 options).
-      Confirms the per-turn time budget is survivable (Lesson 9) and feeds the
-      size ceiling.
-- [ ] **P0.4 Confirm determinism & seedability** for paired-seed eval; confirm a
-      worker can run thousands of games without leaking the singleton / memory.
-- [ ] **P0.5 Decision:** given measured throughput, pick the realistic model-size
-      band for Phase 4 and whether we need cloud/multi-GPU.
+- [x] **P0.1 Measure raw env throughput.** `bench_throughput.py` sweeps worker
+      counts (one `battle_ptr` per process, spawn). Local floor (weak 4-core
+      laptop): **~18K decisions/s peak at 4 workers**, ~linear in *physical* cores;
+      hyperthreads don't help.
+- [x] **P0.2 Decision-rate budget.** ~134 decisions/game; ~9K dec/s *with*
+      parsing ≈ **~800M decisions/day** on the laptop floor — ample for Phases
+      0–3. **Two action items found:** (a) throughput ∝ physical x86 cores ⇒ buy
+      core count when renting; (b) `to_observation_class()` ~halves throughput ⇒
+      **encode from the raw dict, not the dataclass tree** (~2× free).
+- [ ] **P0.3 Inference-cost probe.** Time a forward pass at realistic token
+      counts (board + up to ~1000 options) on CPU. Needs `torch` ⇒ deferred to
+      Phase 1 (`uv add torch`).
+- [ ] **P0.4 Determinism & seedability — ⚠ open risk.** `battle_start` exposes
+      **no seed param**; engine seeds internally. May block paired-seed eval
+      (Phase 5). Investigate env var / `GameInitialize` seeding / alternate entry
+      point; else fall back to higher-n unpaired eval.
+- [ ] **P0.5 Run the benchmark on the actual Colab runtime.** Verified: A100 ≈ 12
+      vCPU (≈6 physical cores; H100 ≥12, TBD). vCPU = 1 hyperthread, and HT doesn't
+      help this sim ⇒ expect peak ~6 workers — measure to confirm. This number
+      decides whether Phase-4 must *decouple* CPU rollout from GPU training. Then
+      pick the first model-size band.
 
-**Exit criteria:** a documented games/sec and decisions/sec on our hardware, a
-chosen model-size band, and confidence the env can drive RL without instability.
+**Exit criteria:** Colab dec/s measured, seeding question resolved, first
+model-size band chosen. (Local feasibility already confirmed.)
 
 ## Phase 1 — Scaffolding & contracts (≈3–4 days, parallel with P0)
 
