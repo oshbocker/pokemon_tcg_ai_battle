@@ -14,7 +14,8 @@ Deadline: final submission **Aug 16, 2026**; today **2026-06-26** → ~7 weeks.
    random flailing; the teacher is never the target. (Lesson 2)
 3. **Low-level, entity-based observation; pointer action head.** Let the model
    learn the card interactions. (Lessons 3, 4)
-4. **Paired-seed, high-n evaluation against a fixed honest suite.** Never act on
+4. **High-n unpaired (side-swapped) evaluation against a fixed honest suite**
+   (engine is unseedable — no paired seeds; see P0.4). Never act on
    small-sample wins. (Lessons 5, 6)
 5. **Stabilize with best-checkpoint gating + a league.** (Lesson 7)
 6. **Design for CPU / time-limit / bundle-size from the start.** A model that
@@ -110,18 +111,17 @@ The make-or-break measurement. Findings logged in
 - [ ] **P0.3 Inference-cost probe.** Time a forward pass at realistic token
       counts (board + up to ~1000 options) on CPU. Needs `torch` ⇒ deferred to
       Phase 1 (`uv add torch`).
-- [ ] **P0.4 Determinism & seedability — ⚠ open risk.** `battle_start` exposes
-      **no seed param**; engine seeds internally. May block paired-seed eval
-      (Phase 5). Investigate env var / `GameInitialize` seeding / alternate entry
-      point; else fall back to higher-n unpaired eval.
-- [ ] **P0.5 Run the benchmark on the actual Colab runtime.** Verified: A100 ≈ 12
-      vCPU (≈6 physical cores; H100 ≥12, TBD). vCPU = 1 hyperthread, and HT doesn't
-      help this sim ⇒ expect peak ~6 workers — measure to confirm. This number
-      decides whether Phase-4 must *decouple* CPU rollout from GPU training. Then
-      pick the first model-size band.
+- [x] **P0.4 Determinism & seedability — RESOLVED: engine is unseedable.** Links
+      `std::random_device`→`mt19937`, no seed export; identical game in 3 fresh
+      procs → 3 different outcomes. **No paired-seed eval.** Mitigation: high-n
+      unpaired + side-swap (cheap — ~3K games in ~17 s engine-only). Details in
+      `PHASE0_THROUGHPUT.md`.
+- [x] **P0.5 Throughput characterized** (L4 ~25K, Blackwell ~81K dec/s; A100 = L4
+      by CPU equivalence). Env is *not* the bottleneck; runtime choice decided.
+      First model-size band pending the P0.3 inference number.
 
-**Exit criteria:** Colab dec/s measured, seeding question resolved, first
-model-size band chosen. (Local feasibility already confirmed.)
+**Exit criteria:** ✅ throughput measured, ✅ seeding resolved, ⏳ first model-size
+band (needs P0.3 inference probe — first task of Phase 1).
 
 ## Phase 1 — Scaffolding & contracts (≈3–4 days, parallel with P0)
 
@@ -179,7 +179,7 @@ PPO with the winner's stabilizers (Lesson 7).
       necessarily 1.0; we don't have the winner's 4-player constraint, and γ<1
       avoids his stalling problem (Lesson 8). Reward = terminal ±1.
 - [ ] **P3.3 Best-checkpoint gating.** Trainee plays a **frozen last-best**
-      opponent; promote on **>~60–70% paired-seed win-rate**. Add small **KL** +
+      opponent; promote on **>~60–70% high-n win-rate**. Add small **KL** +
       **value-CE** terms vs the frozen checkpoint for stability.
 - [ ] **P3.4 League / past-checkpoint pool** (the winner's #1 regret — do it
       early). Sample opponents from {current self, last-best, a few past
@@ -201,7 +201,7 @@ many vCPUs) is released only after the previous one shows real self-play progres
 
 - [ ] **P4.0 First paid burst trigger.** Only after Phases 0–3 (on free Colab)
       produce an agent that (a) clearly beats the heuristic bot in high-n
-      paired-seed eval **and** (b) posts a respectable ladder rating on a real
+      unpaired (side-swapped) eval **and** (b) posts a respectable ladder rating on a real
       submission. That submission is the baseline the scaling sweep must beat.
 - [ ] **P4.1 Scaling sweep.** Hold the recipe; grow model size in steps
       (e.g. 5M → 20M → 60M → …). **Plot win-rate vs the fixed eval suite — and
@@ -220,9 +220,11 @@ Our strongest Orbit Wars habit (Lesson 6). Build the skeleton in Phase 2.
 
 - [ ] **P5.1 Fixed honest opponent suite:** heuristic agent, mirror, random, and
       the strongest public kernels (Crustle wall, Dragapult — in `outputs/kernels`).
-- [ ] **P5.2 Paired-seed, side-swapped, high-n** (start n≥100; Pokémon variance
-      is *higher* than Orbit Wars — re-measure the A/A noise floor and set the
-      "don't act below this n" threshold from data).
+- [ ] **P5.2 High-n unpaired + side-swapped eval** (engine is unseedable — see
+      P0.4 — so no paired seeds). Side-swap seats to cancel first-player bias;
+      report Wilson/binomial CIs. Sizing: ~1.5K games/arm for a 5 pp edge, ~4.3K
+      for 3 pp — cheap given throughput. Re-measure the A/A null (wider than Orbit
+      Wars) and set the "don't act below this n" floor from it.
 - [ ] **P5.3 Resumable CSV results + a single `eval` command.** Track every
       checkpoint. The eval suite is the source of truth, not training reward.
 

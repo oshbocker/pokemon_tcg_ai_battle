@@ -130,8 +130,16 @@ small-sample "win" regressed at high n). This is the only reason we didn't ship
 dozens of phantom improvements.
 
 **Takeaway for Pokémon:** Pokémon has *more* variance than Orbit Wars (shuffles,
-coin flips, mulligans, hidden hands). Paired-seed, side-swapped, high-n evaluation
-is mandatory, and the noise floor will be even larger. Budget for it.
+coin flips, mulligans, hidden hands) — **and worse, the cabt engine is unseedable**
+(it draws its `mt19937` seed from `std::random_device` per battle; verified in
+Phase 0, see [`PHASE0_THROUGHPUT.md`](./PHASE0_THROUGHPUT.md) P0.4). So the
+paired-seed / common-random-number trick that powered our Orbit Wars discipline is
+**unavailable here.** We compensate by **brute-forcing variance with volume**:
+high-n *unpaired* eval (~1.5K games/arm for a 5 pp edge) plus seat side-swapping to
+cancel first-player bias — affordable only because Phase 0 showed games are dirt
+cheap (~180 engine-games/s on an L4). Re-measure the (now wider) A/A null and set
+the "don't act below this n" floor from it. The throughput abundance is what makes
+the loss of paired seeds a non-issue.
 
 ## Lesson 7 — Stabilize self-play with best-checkpoint gating + a league.
 

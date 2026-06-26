@@ -106,7 +106,8 @@ Two clear conclusions:
    4-core/1.8 GHz artifact (likely thermal). Per-core throughput: **~4.5K dec/s
    (laptop) vs ~11K dec/s (EPYC core)**. ⇒ When renting, **buy physical x86 core
    count**, but **measure the actual peak per box** — set `--procs` from the sweep,
-   not a fixed rule. (Server peak still TBD: re-run `--procs 16,24,32,48`.)
+   not a fixed rule. (EPYC peak: ~81K dec/s, plateau at 24 workers = physical
+   cores; HT adds only ~3%.)
 
 2. **`to_observation_class()` costs as much as the entire engine step (~2×
    slowdown).** The recursive `to_dataclass` parse is pure Python overhead. ⇒
@@ -139,26 +140,50 @@ Two clear conclusions:
     python scripts/bench_throughput.py --procs 4,6,8 --duration 8 --parse
    ```
 
+## P0.4 — determinism / seeding: RESOLVED (engine is unseedable) ⚠
+
+**Finding:** the cabt engine is **non-deterministic and cannot be seeded** via the
+local API.
+- Symbol scan of `libcg.so`: links **`std::random_device`** (system-entropy seed)
+  feeding **`std::mt19937`**; the only init export is `GameInitialize` (no seed
+  arg), and `BattleStart` takes only the card array. No seed-control function.
+- Empirical probe: the *same* game (identical decks + identical deterministic
+  policy) run in 3 fresh processes gave 3 different observation-stream hashes and
+  different winners (1, 0, 0). The MT19937 is re-seeded from entropy per battle.
+
+**Consequence:** **no paired-seed / common-random-number evaluation.** That was a
+core Orbit Wars variance-reduction trick (Lesson 6) — unavailable here.
+
+**Mitigation (cheap, because throughput is abundant): brute-force variance with
+volume + side-swapping.**
+- Win/loss is Bernoulli; to detect a **5 pp** edge (≈55% vs 50%) at ~80% power you
+  need **~1,500 games per arm** (~3,000 total); a **3 pp** edge needs ~4,300/arm.
+- At ~25K dec/s on L4 with ~136 dec/game ≈ **~180 engine-games/s** ⇒ 3,000 games
+  in **~17 s** (engine-only; slower with policy inference, still minutes). So the
+  loss of CRN costs us *seconds-to-minutes*, not feasibility.
+- Still **side-swap** seats (A as P0 vs B as P1, then swap) to cancel
+  first-player bias — that's independent of seeding.
+- ⇒ **Phase 5 eval = high-n unpaired + side-swap**, report Wilson/binomial CIs,
+  and set the "don't act below this n" floor from a measured A/A null (re-measure
+  it here — it will be wider than Orbit Wars').
+
 ## Open items still in Phase 0
 
 - [ ] **P0.3 inference-cost probe** — needs `torch`; time a forward pass at
-      realistic token counts (board + up to ~1000 option tokens) on CPU to confirm
-      the per-turn time budget and feed the model-size ceiling. (Deferred to after
-      `uv add torch` in Phase 1.)
-- [ ] **P0.4 determinism / seeding — ⚠ flag.** `battle_start(deck0, deck1)`
-      exposes **no seed parameter** (`lib.BattleStart` takes only the card array);
-      the engine seeds its own RNG internally. Kaggle *replays* carry a
-      `configuration.seed`, but it's unclear we can *set* it via this local API.
-      **This threatens paired-seed evaluation (Phase 5).** Investigate: env var,
-      `GameInitialize` seeding, or a different entry point. If unseedable, fall
-      back to higher-n unpaired eval (variance will be larger — budget for it).
-- [ ] **P0.5 decision** — pick first model-size band *after* the Colab number is
-      in. Local floor already supports it; Colab CPU is the gating unknown.
+      realistic token counts (board + up to ~1000 option tokens) on CPU/GPU to
+      confirm the per-turn time budget and feed the model-size ceiling. (Deferred
+      to start of Phase 1 after `uv add torch`.)
+- [x] **P0.4 determinism / seeding** — resolved above: unseedable; compensate with
+      high-n unpaired eval + side-swap.
+- [x] **P0.5 throughput characterized** across L4 / Blackwell (+ A100 by CPU
+      equivalence). Env is *not* the bottleneck; runtime choice decided (L4 early,
+      Blackwell for Phase 4). First model-size band to be set with the P0.3 number.
 
 ## Bottom line
 
-The engine is **fast and scales cleanly with physical x86 cores** — env
-throughput is *not* a blocker for getting started, and won't be the wall on a
-CPU-heavy rented box. The two things to act on: (1) **encode from the raw dict**,
-not the dataclass tree; (2) **measure Colab's CPU** and, if it's starved, plan to
-decouple rollout from training when we scale.
+Env throughput is **abundant and cheap** (~25K dec/s on the workhorse L4, ~81K on
+Blackwell) and scales cleanly with x86 cores — **not a blocker.** Two things to
+act on in the build: (1) **encode from the raw JSON dict**, not the dataclass tree
+(~2×); (2) the engine is **unseedable**, so **evaluate with high-n unpaired games
++ side-swapping** rather than paired seeds — affordable precisely because games
+are so cheap. Remaining gate before Phase 2: the **P0.3 inference probe**.
