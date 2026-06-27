@@ -247,10 +247,12 @@ class PPOConfig:
     ent_coef: float = 0.01
     max_grad_norm: float = 0.5
     lr: float = 3e-4
-    # KL trust region: stop the update early once the running approx-KL between the
-    # behaviour and current policy exceeds this. The P2.5 collapse was a KL spike on
-    # an over-long update; this is the cheapest stabilizer (Phase 3, P3.3). 0 = off.
-    target_kl: float = 0.03
+    # KL trust region, enforced per-minibatch (see ppo_update): bound each
+    # iteration's policy drift to ~this running-mean approx-KL. 0.5 is the
+    # demonstrated-safe operating point (the stable 40-iter run sat at ~0.2-0.7)
+    # while still cutting the KL~3 spikes that collapsed a low-entropy A/B arm.
+    # Lower it (→0.03) for a tighter, more textbook trust region; 0 = off.
+    target_kl: float = 0.5
 
 
 def ppo_update(
@@ -272,6 +274,7 @@ def ppo_update(
     metrics = {"pg_loss": 0.0, "vf_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clipfrac": 0.0}
     metrics["epochs_run"] = 0.0
     metrics["stopped_kl"] = 0.0
+    batches_per_epoch = max(1, (n + cfg.minibatch - 1) // cfg.minibatch)
     n_batches = 0
     stop = False
     for _epoch in range(cfg.epochs):
@@ -310,17 +313,23 @@ def ppo_update(
             n_batches += 1
             epoch_kl += batch_kl
             epoch_batches += 1
-        metrics["epochs_run"] += 1.0
-        # Trust region: bail out of further epochs once this epoch's mean KL blew
-        # past the target. Checked per-epoch (not per-minibatch) so a single noisy
-        # minibatch can't end the update prematurely.
-        if cfg.target_kl and epoch_batches and epoch_kl / epoch_batches > cfg.target_kl:
-            metrics["stopped_kl"] = 1.0
-            stop = True
+            # Trust region, enforced PER MINIBATCH: stop the update the moment this
+            # epoch's running-mean KL passes target. The old per-EPOCH check was too
+            # coarse — it only fired *after* a full epoch (~70 minibatches) had
+            # already drifted the policy, which let a low-entropy arm spike to KL~3
+            # and collapse (the ON-arm A/B failure). Bounding per-iteration drift to
+            # ~target_kl is the fix; it caps the rare runaway epoch while leaving
+            # normal updates (well under target) to run their full passes.
+            if cfg.target_kl and epoch_kl / epoch_batches > cfg.target_kl:
+                metrics["stopped_kl"] = 1.0
+                stop = True
+                break
+        metrics["epochs_run"] += epoch_batches / batches_per_epoch
 
     out = {k: v / max(1, n_batches) for k, v in metrics.items()}
     out["epochs_run"] = metrics["epochs_run"]
     out["stopped_kl"] = metrics["stopped_kl"]
+    out["updates"] = float(n_batches)
     return out
 
 

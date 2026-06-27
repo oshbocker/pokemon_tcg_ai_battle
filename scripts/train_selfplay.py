@@ -70,7 +70,9 @@ def main() -> int:
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--ent-coef", type=float, default=0.01)
     ap.add_argument("--ent-final", type=float, default=None, help="linear-decay entropy target")
-    ap.add_argument("--target-kl", type=float, default=0.03, help="PPO KL early-stop (0=off)")
+    ap.add_argument(
+        "--target-kl", type=float, default=0.5, help="per-minibatch PPO KL trust region (0=off)"
+    )
     # P3.1 distributed collector + P3.3 best-checkpoint gating.
     ap.add_argument("--collector", default="single", choices=["single", "dist"])
     ap.add_argument("--workers", type=int, default=8, help="dist collector worker procs")
@@ -161,7 +163,7 @@ def main() -> int:
             line = (
                 f"it {it:>3}  N={len(buf):>5}  pg={m['pg_loss']:+.3f} vf={m['vf_loss']:.3f} "
                 f"ent={m['entropy']:.3f} kl={m['approx_kl']:+.3f}{stop} clip={m['clipfrac']:.2f} "
-                f"ep={int(m.get('epochs_run', a.epochs))} lr={cur_lr:.1e}  {dt:.1f}s"
+                f"upd={int(m.get('updates', 0))} lr={cur_lr:.1e}  {dt:.1f}s"
             )
 
             # P3.3 gated promotion: beat the frozen last-best by the threshold to promote.

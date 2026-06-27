@@ -122,8 +122,8 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
                     stop = "*" if m.get("stopped_kl") else ""
                     print(
                         f"    it {it:>3} N={len(buf):>5} kl={m['approx_kl']:+.3f}{stop} "
-                        f"ent={m['entropy']:.3f} gate={r['winrate'] * 100:.0f}% "
-                        f"vsRand={sr['winrate'] * 100:.0f}%",
+                        f"upd={int(m.get('updates', 0))} ent={m['entropy']:.3f} "
+                        f"gate={r['winrate'] * 100:.0f}% vsRand={sr['winrate'] * 100:.0f}%",
                         flush=True,
                     )
     finally:
@@ -173,8 +173,13 @@ def main() -> int:
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--lr-decay", type=float, default=0.33, help="final LR = lr * this")
     ap.add_argument("--ent-coef", type=float, default=0.01)
-    ap.add_argument("--ent-decay", type=float, default=0.1, help="final ent = ent * this")
-    ap.add_argument("--target-kl", type=float, default=0.03)
+    ap.add_argument(
+        "--ent-decay",
+        type=float,
+        default=0.5,
+        help="final ent = ent * this (keep a floor; decaying to ~0 let the ON arm collapse)",
+    )
+    ap.add_argument("--target-kl", type=float, default=0.5, help="per-minibatch KL trust region")
     ap.add_argument("--gate-every", type=int, default=5)
     ap.add_argument("--gate-games", type=int, default=200)
     ap.add_argument("--gate-threshold", type=float, default=0.55)

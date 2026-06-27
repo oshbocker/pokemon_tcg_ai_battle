@@ -260,34 +260,72 @@ class PtcgNet(nn.Module):
     ) -> list[dict]:
         """Pick an action per decision. Returns one dict per input:
         {action: list[int], log_prob: float, value: float}. Honors min/max count via
-        the autoregressive STOP pointer; `action` is always a valid engine selection."""
+        the autoregressive STOP pointer; `action` is always a valid engine selection.
+
+        Single-pick decisions (`maxCount==1`, the overwhelming majority) are sampled
+        in **one batched step** — critical for the distributed collector, where the
+        old per-decision Python loop forced one GPU→CPU sync per decision and made
+        rollout latency- rather than GPU-bound. The path mirrors
+        `evaluate_actions`' onestep math, so act↔evaluate log-probs stay identical
+        (the PPO-ratio parity invariant). Multi-pick decisions still replay the
+        autoregressive loop per item."""
         batch = collate(encoded, device)
         enc = self._encode(batch)
-        opt_h, query, value = enc["opt_h"], enc["query"], enc["value"]
-        out = []
-        for i, e in enumerate(encoded):
+        opt_h, query, value, opt_mask = enc["opt_h"], enc["query"], enc["value"], enc["opt_mask"]
+        o_max = opt_h.shape[1]
+        min_c, max_c = batch["min_c"], batch["max_c"]
+        out: list[dict] = [{} for _ in encoded]
+
+        # -- vectorised single-pick (maxCount==1): one batched sampling step --
+        single = max_c == 1
+        sidx = single.nonzero(as_tuple=True)[0]
+        if sidx.numel():
+            oh, q = opt_h[sidx], query[sidx]
+            logits = (torch.einsum("bod,bd->bo", oh, q) * self.logit_scale).masked_fill(
+                ~opt_mask[sidx], NEG_INF
+            )
+            stop = (q * self.stop_key).sum(-1, keepdim=True) * self.logit_scale
+            stop = stop.masked_fill((min_c[sidx] != 0).unsqueeze(1), NEG_INF)  # stop only if min==0
+            cat = torch.cat([logits, stop], dim=1)  # [ns, o_max+1]; col o_max = STOP
+            lp = torch.log_softmax(cat, dim=-1)
+            picks = (
+                torch.multinomial(lp.exp(), 1, generator=generator).squeeze(1)
+                if sample
+                else cat.argmax(dim=-1)
+            )
+            logp = lp.gather(1, picks[:, None]).squeeze(1)
+            picks_l, logp_l = picks.tolist(), logp.tolist()
+            val_l = value[sidx].tolist()
+            for k, i in enumerate(sidx.tolist()):
+                p = picks_l[k]
+                action = [] if p == o_max else [p]  # o_max == STOP (only when min==0)
+                out[i] = {"action": action, "log_prob": logp_l[k], "value": val_l[k]}
+
+        # -- multi-pick (maxCount>1): autoregressive STOP pointer, per item --
+        for i in (~single).nonzero(as_tuple=True)[0].tolist():
+            e = encoded[i]
             n_opt = e.n_options
             keys = opt_h[i, :n_opt]  # [n_opt, d]
             q = query[i].clone()
             avail = torch.ones(n_opt, dtype=torch.bool, device=keys.device)
             chosen: list[int] = []
-            logp = 0.0
+            logp_f = 0.0
             while len(chosen) < e.max_count and bool(avail.any()):
                 allow_stop = len(chosen) >= e.min_count
-                cat = self._step_cat(keys, q, avail, allow_stop=allow_stop)
-                probs = F.softmax(cat, dim=-1)
+                step = self._step_cat(keys, q, avail, allow_stop=allow_stop)
+                probs = F.softmax(step, dim=-1)
                 idx = (
                     int(torch.multinomial(probs, 1, generator=generator))
                     if sample
                     else int(torch.argmax(probs))
                 )
-                logp += float(torch.log(probs[idx].clamp_min(1e-12)))
+                logp_f += float(torch.log(probs[idx].clamp_min(1e-12)))
                 if allow_stop and idx == n_opt:  # STOP
                     break
                 chosen.append(idx)
                 avail[idx] = False
                 q = q + self.selected_proj(keys[idx])
-            out.append({"action": chosen, "log_prob": logp, "value": float(value[i])})
+            out[i] = {"action": chosen, "log_prob": logp_f, "value": float(value[i])}
         return out
 
     # -- PPO: differentiable log-prob / entropy / value for taken actions --

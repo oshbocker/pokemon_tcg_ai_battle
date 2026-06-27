@@ -98,6 +98,33 @@ def test_ppo_update_smoke():
     assert m["entropy"] >= -1e-6
 
 
+def test_ppo_kl_trust_region_stops_early():
+    """A tiny target_kl trips the per-minibatch trust region: the update stops after
+    very few minibatches (stopped_kl set), vs a full multi-epoch run when off."""
+    torch.manual_seed(0)
+    model = PtcgNet(TINY)
+    deck = load_deck()
+    buf = collect_rollout(model, deck, n_games=3, opponent="first", seed=3)
+    assert len(buf) > 64  # need several minibatches for the test to be meaningful
+
+    import copy
+
+    m_tight = copy.deepcopy(model)
+    opt_t = torch.optim.Adam(m_tight.parameters(), lr=1e-2)  # big steps → KL grows fast
+    tight = ppo_update(
+        m_tight, opt_t, buf, PPOConfig(epochs=4, minibatch=32, target_kl=1e-6), device="cpu"
+    )
+    m_off = copy.deepcopy(model)
+    opt_o = torch.optim.Adam(m_off.parameters(), lr=1e-2)
+    full = ppo_update(
+        m_off, opt_o, buf, PPOConfig(epochs=4, minibatch=32, target_kl=0.0), device="cpu"
+    )
+
+    assert tight["stopped_kl"] == 1.0
+    assert tight["updates"] < full["updates"]  # trust region cut the update short
+    assert full["stopped_kl"] == 0.0
+
+
 def test_quick_eval_smoke():
     torch.manual_seed(0)
     model = PtcgNet(TINY)

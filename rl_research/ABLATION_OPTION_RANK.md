@@ -91,7 +91,35 @@ python scripts/ablate_option_rank_selfplay.py --size small --workers 12 \
     --seeds 2 --iters 80 --games-per-iter 128 --eval-n 2000 --device cuda
 ```
 
-**Result:** _pending the L4 run — paste the table + RECOMMENDATION here, then set
-the `use_option_rank` default accordingly (or keep ON, provisional, with the
-reason)._ A laptop smoke (`--size tiny --iters 3`) confirms the pipeline runs and
-emits the verdict; it is **not** a result (tiny/under-trained → pure noise).
+**Result:** _final verdict pending a clean re-run (see below)._ A laptop smoke
+(`--size tiny --iters 3`) confirms the pipeline runs and emits the verdict; it is
+**not** a result (tiny/under-trained → pure noise).
+
+### First L4 run (2026-06-27) — confounded by a collapse; informative anyway
+
+The first `small`, 2-seed L4 run (the original recipe: per-*epoch* KL check,
+entropy decayed to ~1e-3) gave a strong in-loop signal *and* exposed a bug:
+
+- **ON runs hot / low-entropy** (~0.01–0.05), vs-random 95–98%, learns fast.
+- **OFF runs cool / high-entropy** (~0.24–0.28), vs-random ~70–90%, slower but steady.
+- **ON seed 1 collapsed** (~it20): entropy hit ~0.005, then vs-random 98%→45%,
+  gate 61%→2%, with a KL spike to ~3.2. Exactly the **"crutch overfits → brittle"**
+  pattern hypothesised above — `opt_rank` lets the policy collapse onto the engine
+  order, entropy craters, and one over-large update detonates it. (Best-checkpoint
+  gating preserved the pre-collapse it15 weights, so nothing un-trained was saved.)
+
+This makes the run's ON arm **under-trained on seed 1** (≈15 useful iters vs OFF's
+80) → the A/B is confounded; do **not** read a default off it. But it diagnosed the
+real cause: the **per-epoch** KL early-stop was too coarse (one epoch drifted
+~0.5–3 KL before the brake fired). Fixes shipped before the re-run:
+
+- **Per-minibatch KL trust region** (`ppo_update`) — bounds each iteration's drift
+  to ~`target_kl` (default raised to 0.5, the demonstrated-safe operating point).
+- **Entropy floor** — ablation `--ent-decay` default 0.5 (final ~5e-3), so entropy
+  no longer decays to the ~0 that preceded the collapse.
+- (Also: the pointer-logit `1/√d` fix and a vectorised `act()` for throughput.)
+
+**Re-run** with the fixed recipe on the L4, then record the honest-suite table +
+RECOMMENDATION here and set the default. The brittleness of ON is itself evidence
+to weigh: even if ON wins vs-random, if it needs the entropy floor to avoid
+collapse while OFF is stable without it, that is a mark against the crutch.
