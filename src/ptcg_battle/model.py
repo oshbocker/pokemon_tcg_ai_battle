@@ -267,14 +267,8 @@ class PtcgNet(nn.Module):
             chosen: list[int] = []
             logp = 0.0
             while len(chosen) < e.max_count and bool(avail.any()):
-                logits = keys @ q  # [n_opt]
-                logits = logits.masked_fill(~avail, NEG_INF)
                 allow_stop = len(chosen) >= e.min_count
-                if allow_stop:
-                    stop = (self.stop_key * q).sum().view(1)
-                    cat = torch.cat([logits, stop])
-                else:
-                    cat = logits
+                cat = self._step_cat(keys, q, avail, allow_stop=allow_stop)
                 probs = F.softmax(cat, dim=-1)
                 idx = (
                     int(torch.multinomial(probs, 1, generator=generator))
@@ -289,6 +283,73 @@ class PtcgNet(nn.Module):
                 q = q + self.selected_proj(keys[idx])
             out.append({"action": chosen, "log_prob": logp, "value": float(value[i])})
         return out
+
+    # -- PPO: differentiable log-prob / entropy / value for taken actions --
+    def evaluate_actions(
+        self, batch: dict, actions: list[list[int]]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Re-score `actions` under the current params. Returns (log_prob[B],
+        entropy[B], value[B]). Mirrors `act()`'s distribution exactly so that the
+        ratio new/old is well-defined: a STOP candidate is appended whenever
+        `minCount` is met. The common `maxCount==1` case is vectorised; the rare
+        multi-pick case replays the autoregressive steps per sample."""
+        enc = self._encode(batch)
+        opt_h, query, value, opt_mask = enc["opt_h"], enc["query"], enc["value"], enc["opt_mask"]
+        bsz, o_max, _ = opt_h.shape
+        min_c, max_c = batch["min_c"], batch["max_c"]
+        logp = query.new_zeros(bsz)
+        entropy = query.new_zeros(bsz)
+
+        onestep = max_c == 1  # covers single-pick and "pick up to one" (min_c==0)
+        if bool(onestep.any()):
+            idx = onestep.nonzero(as_tuple=True)[0]
+            oh, q = opt_h[idx], query[idx]
+            opt_logits = torch.einsum("bod,bd->bo", oh, q).masked_fill(~opt_mask[idx], NEG_INF)
+            stop = (q * self.stop_key).sum(-1, keepdim=True)  # [n,1]
+            stop = stop.masked_fill((min_c[idx] != 0).unsqueeze(1), NEG_INF)  # stop only if min==0
+            cat = torch.cat([opt_logits, stop], dim=1)  # [n, O+1]; col O = STOP
+            lp_all = F.log_softmax(cat, dim=-1)
+            tgt = torch.tensor(
+                [(actions[j][0] if actions[j] else o_max) for j in idx.tolist()],
+                device=cat.device,
+            )
+            logp[idx] = lp_all.gather(1, tgt[:, None]).squeeze(1)
+            entropy[idx] = -(lp_all.exp() * lp_all).sum(1)
+
+        for j in (~onestep).nonzero(as_tuple=True)[0].tolist():
+            n = int(opt_mask[j].sum())
+            lp, ent = self._replay_action(
+                opt_h[j], query[j], n, int(min_c[j]), int(max_c[j]), actions[j]
+            )
+            logp[j], entropy[j] = lp, ent
+        return logp, entropy, value
+
+    def _replay_action(self, keys_all, q0, n, min_c, max_c, action):
+        """Autoregressive log-prob + entropy of one multi-pick `action`."""
+        keys = keys_all[:n]
+        q = q0
+        avail = torch.ones(n, dtype=torch.bool, device=keys.device)
+        logp = q0.new_zeros(())
+        entropy = q0.new_zeros(())
+        for t, a in enumerate(action):
+            cat = self._step_cat(keys, q, avail, allow_stop=(t >= min_c))
+            lp = F.log_softmax(cat, dim=-1)
+            logp = logp + lp[a]
+            entropy = entropy + -(lp.exp() * lp).sum()
+            avail[a] = False
+            q = q + self.selected_proj(keys[a])
+        if len(action) < max_c:  # a trailing STOP was chosen (allowed since len>=min_c)
+            cat = self._step_cat(keys, q, avail, allow_stop=True)
+            lp = F.log_softmax(cat, dim=-1)
+            logp = logp + lp[-1]
+            entropy = entropy + -(lp.exp() * lp).sum()
+        return logp, entropy
+
+    def _step_cat(self, keys, q, avail, *, allow_stop: bool):
+        logits = (keys @ q).masked_fill(~avail, NEG_INF)
+        if allow_stop:
+            return torch.cat([logits, (self.stop_key * q).sum().view(1)])
+        return logits
 
 
 # ---------------------------------------------------------------------------

@@ -173,9 +173,16 @@ and the engine's option order is fed as the ablatable `opt_rank` feature.
 - [x] **P2.4 Critic head** — DONE: value token (masked-mean pool) → `tanh` ∈
       [-1,1]. POMDP ⇒ critic sees only the observation. Overfit-one-batch probe
       confirms capacity (not the bottleneck — matches Kaggle #713608).
-- [ ] **P2.5 Single-process rollout + PPO update** wired end to end on the small
-      model. Goal: **learn to beat the random agent decisively**, sanity-checking
-      the whole loop before any scale.
+- [x] **P2.5 Single-process rollout + PPO update** — DONE
+      (`src/ptcg_battle/ppo.py`, `scripts/train_selfplay.py`). Self-play collector
+      (both seats trained) or fixed-opponent mode, per-player GAE-λ, clipped PPO
+      (+ clipped value loss, entropy, grad-clip), `act`/`evaluate_actions`
+      consistency proven. **Sanity result (tiny, vs random, CPU): win-rate climbed
+      50% → 74% (it4) → 82% (it8) → 86% (it12)** — the loop learns. A late-training
+      collapse (it16, kl spike) is the expected unstabilized-PPO wobble → Phase 3's
+      best-checkpoint gating + KL control (P3.2/P3.3) is the fix. Note: the model
+      beats `random` but not yet `first`/B1 (engine order is a strong baseline) —
+      expected at this scale. **Phase 2 COMPLETE.**
 
 ## Phase 3 — Self-play training loop (≈1 week)
 

@@ -7,6 +7,7 @@ outputs/discussions/
 outputs/kernels/
 outputs/logs/
 outputs/eval/
+outputs/checkpoints/
 
 # Keep the placeholder
 !outputs/.gitkeep
