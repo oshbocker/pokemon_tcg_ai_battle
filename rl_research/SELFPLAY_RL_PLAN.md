@@ -185,20 +185,31 @@ and the engine's option order is fed as the ablatable `opt_rank` feature.
       beats `random` but not yet `first`/B1 (engine order is a strong baseline) —
       expected at this scale. **Phase 2 COMPLETE.**
 
-## Phase 3 — Self-play training loop (≈1 week)
+## Phase 3 — Self-play training loop (≈1 week) ⟵ IN PROGRESS
 
 PPO with the winner's stabilizers (Lesson 7).
 
-- [ ] **P3.1 Distributed rollout collector.** N worker processes each run
-      self-play games (one `battle_ptr` each), send trajectories to a learner.
-      This is our throughput engine — tune N to the Phase-0 saturation point.
-- [ ] **P3.2 PPO learner:** GAE-λ, clipped PG, advantage normalization, entropy
-      bonus, value loss. **γ:** start ~0.997 (turn-based, finite horizon) — *not*
-      necessarily 1.0; we don't have the winner's 4-player constraint, and γ<1
-      avoids his stalling problem (Lesson 8). Reward = terminal ±1.
-- [ ] **P3.3 Best-checkpoint gating.** Trainee plays a **frozen last-best**
-      opponent; promote on **>~60–70% high-n win-rate**. Add small **KL** +
-      **value-CE** terms vs the frozen checkpoint for stability.
+- [x] **P3.1 Distributed rollout collector.** `src/ptcg_battle/dist_collector.py`
+      (+ torch-free `dist_worker.py`): a **persistent pool of W env-worker
+      processes** (one `battle_ptr` each, engine + numpy encoder, *no torch*) feeds
+      a **central batched GPU inference loop** (drain pending decisions → one
+      `model.act()` → scatter actions back). Central owns all RL state and reuses
+      `build_buffer_from_trajectories`, so GAE/buffer are **identical** to the
+      single-process collector (parity by construction; `tests/test_dist_collector`).
+      Workers persist across iters (no weight-sync — they don't hold the model).
+      Drop-in for `collect_rollout`; exploits the L4 batch-≥48 finding (P0.3).
+      **Smoke-tested locally (W=4, tiny); real `small` run is on the L4.**
+- [x] **P3.2 PPO learner:** GAE-λ, clipped PG, advantage normalization, entropy
+      bonus, clipped value loss, grad-clip — all in `ppo.py` (from P2.5). **γ=0.997**
+      default (turn-based, finite horizon; γ<1 avoids the winner's stalling, Lesson
+      8). Reward = terminal ±1. **Added Phase-3 stabilizers:** **KL early-stop**
+      per update (`PPOConfig.target_kl`, the cheapest fix for the P2.5 KL-spike
+      collapse), plus **LR + entropy decay schedules** in `train_selfplay.py`.
+- [x] **P3.3 Best-checkpoint gating.** `train_selfplay.py --gate`: trainee plays a
+      **frozen last-best** (`ppo.play_match`, side-swapped, high-n); promote +
+      checkpoint on **> `--gate-threshold`** (default 55%). This is the anti-collapse
+      net — `best.pt` only ever advances. (value-CE/KL-to-frozen terms: deferred;
+      KL early-stop already covers the collapse we saw.) **The A/B's prerequisite.**
 - [ ] **P3.4 League / past-checkpoint pool** (the winner's #1 regret — do it
       early). Sample opponents from {current self, last-best, a few past
       checkpoints, the heuristic bot}. Guards against non-transitive
@@ -246,8 +257,13 @@ Our strongest Orbit Wars habit (Lesson 6). Build the skeleton in Phase 2.
 - [x] **P5.3 Resumable CSV results + a single `eval` command** — DONE
       (`scripts/eval.py`). Re-running tops up to `--games`; the suite (mirror,
       random, first today; heuristic/kernels/model later) is the source of truth.
+- [x] **P5.4 `model:<path>` eval agents wired** (`eval_harness._build_model_agent`):
+      a trained checkpoint loads as a greedy champion/opponent through the same
+      high-n, side-swapped, resumable harness (torch imported lazily, per-worker CPU
+      net). Enables honest-suite eval of trained policies and model-vs-model
+      head-to-heads (used by the Phase-3 option-rank A/B). `tests/test_eval_model.py`.
 - [ ] **P5.1 Fixed honest opponent suite — extend** with the strongest public
-      kernels (Crustle wall, Dragapult) once a trained `model:<path>` agent exists.
+      kernels (Crustle wall, Dragapult) now that `model:<path>` agents exist.
 
 ## Phase 6 — Submission engineering (≈1 week before deadline; design-aware throughout)
 

@@ -60,3 +60,38 @@ Tiny model, 2 seeds, CPU, trained vs `random` (not self-play). Directional, not
 settled. The late-training PPO collapse (P2.5 note) means we compare
 best-checkpoints, not final — fair (same procedure both arms) but adds selection
 noise at the in-loop `sel-n`. Rerun bigger on the L4 before treating as final.
+
+---
+
+## Phase-3 definitive A/B (self-play) — harness built, L4 run PENDING (2026-06-27)
+
+The deferred settle is now executable. `scripts/ablate_option_rank_selfplay.py`
+trains both arms under the **stabilized Phase-3 recipe** and removes the two
+confounds the Phase-2 run flagged:
+
+- **Self-play, not vs-random.** `DistributedCollector` (P3.1) collects `--opponent
+  self` for both arms — the real use case, so the eval is on-distribution and the
+  H2H is no longer an OOD artifact (both arms have faced competent nets).
+- **No collapse.** KL early-stop (`--target-kl`), LR + entropy decay, and
+  best-checkpoint **gating vs a frozen last-best** (P3.2/P3.3) keep each arm from
+  the P2.5 wobble, so the comparison isn't contaminated by a collapsed final.
+
+Judging is unchanged in spirit — high-n, side-swapped, Wilson CIs — but now runs
+through the real eval harness via `model:<path>` agents (P3 task 2): each arm is
+scored on the **full honest suite (`random`, `first`/B1, `heuristic`)** plus a
+**model-vs-model head-to-head** (ON champion vs OFF opponent). The script prints a
+per-opponent two-proportion verdict and a RECOMMENDATION (keep ON / flip to OFF /
+inconclusive). Watch for the hypothesized **"crutch overfits in self-play"**
+pattern: ON beating weak baselines but losing the H2H and/or `heuristic`.
+
+Run it on the L4 (`notebooks/colab_selfplay.ipynb`, cell 3):
+
+```
+python scripts/ablate_option_rank_selfplay.py --size small --workers 12 \
+    --seeds 2 --iters 80 --games-per-iter 128 --eval-n 2000 --device cuda
+```
+
+**Result:** _pending the L4 run — paste the table + RECOMMENDATION here, then set
+the `use_option_rank` default accordingly (or keep ON, provisional, with the
+reason)._ A laptop smoke (`--size tiny --iters 3`) confirms the pipeline runs and
+emits the verdict; it is **not** a result (tiny/under-trained → pure noise).

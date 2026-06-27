@@ -69,6 +69,51 @@ def gae_terminal(
     return adv, ret
 
 
+# A single decision in a player's trajectory: what the policy saw, did, and
+# estimated. `(EncodedObs, action, old_logp, value)` — the same 4-tuple both the
+# single-process and the distributed collector accumulate before GAE.
+TrajStep = tuple[EncodedObs, list[int], float, float]
+
+
+def build_buffer_from_trajectories(
+    trajectories: list[tuple[list[TrajStep], float]], gamma: float, lam: float
+) -> RolloutBuffer:
+    """Flatten per-player `(steps, terminal_reward)` trajectories into a GAE'd buffer.
+
+    This is the **single** place GAE + flattening happens, so the single-process
+    and distributed collectors are byte-for-byte identical in how they turn raw
+    decisions into a training buffer (the parity guarantee — see
+    `tests/test_dist_collector.py`). `steps` is a list of `(enc, action, logp,
+    value)`; empty trajectories are skipped.
+    """
+    enc_all: list[EncodedObs] = []
+    act_all: list[list[int]] = []
+    logp_all: list[float] = []
+    val_all: list[float] = []
+    adv_all: list[float] = []
+    ret_all: list[float] = []
+    for steps, reward in trajectories:
+        if not steps:
+            continue
+        values = [s[3] for s in steps]
+        adv, ret = gae_terminal(values, reward, gamma, lam)
+        for k, (enc, action, logp, value) in enumerate(steps):
+            enc_all.append(enc)
+            act_all.append(action)
+            logp_all.append(logp)
+            val_all.append(value)
+            adv_all.append(adv[k])
+            ret_all.append(ret[k])
+    return RolloutBuffer(
+        encoded=enc_all,
+        actions=act_all,
+        logp=torch.tensor(logp_all, dtype=torch.float32),
+        value=torch.tensor(val_all, dtype=torch.float32),
+        adv=torch.tensor(adv_all, dtype=torch.float32),
+        ret=torch.tensor(ret_all, dtype=torch.float32),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Engine plumbing
 # ---------------------------------------------------------------------------
@@ -133,19 +178,16 @@ def collect_rollout(
     """
     model.eval()
     rng = random.Random(seed)
-    gen = torch.Generator().manual_seed(seed)
+    # The sampling generator must live on the same device as the policy's logits;
+    # a CPU generator with CUDA probs raises (latent on the GPU runtimes).
+    gen = torch.Generator(device=device).manual_seed(seed)
     prev_cwd = Path.cwd()
     os.chdir(AGENT_DIR)
     try:
         to_oc, battle_start, battle_select, battle_finish = _import_engine()
         opp_fn = None if opponent == "self" else _make_fixed_opponent(opponent, deck, rng)
 
-        enc_all: list[EncodedObs] = []
-        act_all: list[list[int]] = []
-        logp_all: list[float] = []
-        val_all: list[float] = []
-        adv_all: list[float] = []
-        ret_all: list[float] = []
+        trajectories: list[tuple[list[TrajStep], float]] = []
 
         for g in range(n_games):
             model_seat = g % 2  # side-swap
@@ -186,26 +228,11 @@ def collect_rollout(
                 if not steps:
                     continue
                 reward = 0.0 if result == 2 else (1.0 if result == seat else -1.0)
-                values = [s[3] for s in steps]
-                adv, ret = gae_terminal(values, reward, gamma, lam)
-                for k, (enc, action, logp, value) in enumerate(steps):
-                    enc_all.append(enc)
-                    act_all.append(action)
-                    logp_all.append(logp)
-                    val_all.append(value)
-                    adv_all.append(adv[k])
-                    ret_all.append(ret[k])
+                trajectories.append((steps, reward))
     finally:
         os.chdir(prev_cwd)
 
-    return RolloutBuffer(
-        encoded=enc_all,
-        actions=act_all,
-        logp=torch.tensor(logp_all, dtype=torch.float32),
-        value=torch.tensor(val_all, dtype=torch.float32),
-        adv=torch.tensor(adv_all, dtype=torch.float32),
-        ret=torch.tensor(ret_all, dtype=torch.float32),
-    )
+    return build_buffer_from_trajectories(trajectories, gamma, lam)
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +247,10 @@ class PPOConfig:
     ent_coef: float = 0.01
     max_grad_norm: float = 0.5
     lr: float = 3e-4
+    # KL trust region: stop the update early once the running approx-KL between the
+    # behaviour and current policy exceeds this. The P2.5 collapse was a KL spike on
+    # an over-long update; this is the cheapest stabilizer (Phase 3, P3.3). 0 = off.
+    target_kl: float = 0.03
 
 
 def ppo_update(
@@ -239,8 +270,15 @@ def ppo_update(
     old_val = buf.value.to(device)
 
     metrics = {"pg_loss": 0.0, "vf_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clipfrac": 0.0}
+    metrics["epochs_run"] = 0.0
+    metrics["stopped_kl"] = 0.0
     n_batches = 0
-    for _ in range(cfg.epochs):
+    stop = False
+    for _epoch in range(cfg.epochs):
+        if stop:
+            break
+        epoch_kl = 0.0
+        epoch_batches = 0
         perm = torch.randperm(n)
         for start in range(0, n, cfg.minibatch):
             idx = perm[start : start + cfg.minibatch].tolist()
@@ -263,14 +301,27 @@ def ppo_update(
             optimizer.step()
 
             with torch.no_grad():
+                batch_kl = float((old_logp[idx] - new_logp).mean())
                 metrics["pg_loss"] += float(pg)
                 metrics["vf_loss"] += float(vf)
                 metrics["entropy"] += float(ent)
-                metrics["approx_kl"] += float((old_logp[idx] - new_logp).mean())
+                metrics["approx_kl"] += batch_kl
                 metrics["clipfrac"] += float(((ratio - 1).abs() > cfg.clip).float().mean())
             n_batches += 1
+            epoch_kl += batch_kl
+            epoch_batches += 1
+        metrics["epochs_run"] += 1.0
+        # Trust region: bail out of further epochs once this epoch's mean KL blew
+        # past the target. Checked per-epoch (not per-minibatch) so a single noisy
+        # minibatch can't end the update prematurely.
+        if cfg.target_kl and epoch_batches and epoch_kl / epoch_batches > cfg.target_kl:
+            metrics["stopped_kl"] = 1.0
+            stop = True
 
-    return {k: v / max(1, n_batches) for k, v in metrics.items()}
+    out = {k: v / max(1, n_batches) for k, v in metrics.items()}
+    out["epochs_run"] = metrics["epochs_run"]
+    out["stopped_kl"] = metrics["stopped_kl"]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +394,75 @@ def quick_eval(
         "losses": losses,
         "draws": draws,
         "winrate": (wins / decisive) if decisive else float("nan"),
+        "n": decisive,
+    }
+
+
+@torch.no_grad()
+def play_match(
+    model_a: PtcgNet,
+    model_b: PtcgNet,
+    deck: list[int],
+    n_games: int,
+    *,
+    device: str = "cpu",
+    seed: int = 777,
+    max_steps: int = 4000,
+) -> dict:
+    """`model_a` vs `model_b`, greedy, side-swapped. Returns A's win/loss/draw.
+
+    The engine for best-checkpoint gating (P3.3): play the trainee against a frozen
+    opponent and promote on a high-n win rate. Side-swap (A on seat 0 for even
+    games, seat 1 for odd) cancels the first-player bias the engine has."""
+    model_a.eval()
+    model_b.eval()
+    gen = torch.Generator().manual_seed(seed)
+    prev_cwd = Path.cwd()
+    os.chdir(AGENT_DIR)
+    a_wins = b_wins = draws = 0
+    try:
+        to_oc, battle_start, battle_select, battle_finish = _import_engine()
+        for g in range(n_games):
+            a_seat = g % 2
+            obs = None
+            result = None
+            try:
+                obs, _ = battle_start(deck, deck)
+                if obs is None:
+                    continue
+                for _ in range(max_steps):
+                    oc = to_oc(obs)
+                    cur = oc.current
+                    if cur is None:
+                        break
+                    if cur.result is not None and cur.result >= 0:
+                        result = cur.result
+                        break
+                    m = model_a if cur.yourIndex == a_seat else model_b
+                    out = m.act(
+                        [encode_observation(obs)], sample=False, device=device, generator=gen
+                    )
+                    obs = battle_select(out[0]["action"])
+            finally:
+                if obs is not None:
+                    with contextlib.suppress(Exception):
+                        battle_finish()
+            if result is None:
+                continue
+            if result == 2:
+                draws += 1
+            elif result == a_seat:
+                a_wins += 1
+            else:
+                b_wins += 1
+    finally:
+        os.chdir(prev_cwd)
+    decisive = a_wins + b_wins
+    return {
+        "a_wins": a_wins,
+        "b_wins": b_wins,
+        "draws": draws,
+        "winrate": (a_wins / decisive) if decisive else float("nan"),
         "n": decisive,
     }
 

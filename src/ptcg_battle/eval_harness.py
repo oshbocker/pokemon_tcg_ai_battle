@@ -15,9 +15,11 @@ imported *inside* the worker so each process owns its own engine handle. Results
 stream to a **resumable CSV** (one row per finished chunk): re-running tops up to
 the requested game count instead of starting over.
 
-This module is engine-only (no torch). Agents are named specs resolved per worker
-(`heuristic`, `random`, `first`, `mirror`, and later `model:<path>`), so they
-pickle cleanly across a spawn. The heuristic agent (`agent/main.py`) keeps
+This module is engine-only at import (torch is imported lazily, only when a
+`model:<path>` agent is resolved). Agents are named specs resolved per worker
+(`heuristic`, `random`, `first`, `mirror`, `model:<path>`), so they pickle cleanly
+across a spawn — the trained policy loads its own net per worker on CPU and acts
+greedily. The heuristic agent (`agent/main.py`) keeps
 **module-global** turn state, so each agent slot loads its *own* module instance —
 otherwise champion and opponent would clobber each other's `plan` in a mirror.
 """
@@ -130,6 +132,46 @@ def _load_main_module(name: str):
     return mod
 
 
+def _load_deck_csv() -> list[int]:
+    """The fixed 60-card deck (`agent/deck.csv`) — the deck a `model:` agent plays."""
+    lines = [ln for ln in (AGENT_DIR / "deck.csv").read_text().splitlines() if ln.strip()]
+    return [int(lines[i]) for i in range(60)]
+
+
+def _build_model_agent(spec: str, device: str = "cpu"):
+    """Resolve `model:<path>` to (greedy agent_fn, deck). Imports torch lazily so
+    the engine-only specs (and the encoding tests) never pull in the rl extra.
+
+    The checkpoint is the `{model, cfg}` dict written by `scripts/train_selfplay.py`
+    / the ablation. The agent is **greedy** (`sample=False`) — evaluation wants the
+    policy's mode, not exploration. Path is resolved relative to the repo root when
+    not absolute (workers chdir into `agent/`, so a bare path would break)."""
+    import torch  # noqa: PLC0415 — lazy: keep torch out of the engine-only path
+
+    from .encoding import encode_observation
+    from .model import ModelConfig, PtcgNet
+
+    raw = spec[len("model:") :]
+    path = Path(raw)
+    if not path.is_absolute():
+        path = REPO / path
+    ckpt = torch.load(path, map_location=device, weights_only=False)
+    cfg = ModelConfig(**ckpt["cfg"]) if isinstance(ckpt.get("cfg"), dict) else ModelConfig()
+    model = PtcgNet(cfg).to(device)
+    model.load_state_dict(ckpt["model"])
+    model.eval()
+    deck = _load_deck_csv()
+
+    @torch.no_grad()
+    def agent_fn(obs_dict):
+        if obs_dict.get("select") is None:
+            return deck
+        out = model.act([encode_observation(obs_dict)], sample=False, device=device)
+        return out[0]["action"]
+
+    return agent_fn, deck
+
+
 def _build_agent(spec: str, deck: list[int], rng: random.Random, slot: str):
     """Resolve an agent spec to (agent_fn, deck). Called once per worker, per slot."""
     from cg.api import to_observation_class  # type: ignore[reportMissingImports]
@@ -153,8 +195,8 @@ def _build_agent(spec: str, deck: list[int], rng: random.Random, slot: str):
             return list(range(min(k, n)))
 
         return agent_fn, deck
-    if spec.startswith("model:"):  # Phase 2+ hook
-        raise NotImplementedError("model:<path> agents arrive with the Phase 2 policy")
+    if spec.startswith("model:"):
+        return _build_model_agent(spec)
     raise ValueError(f"unknown agent spec: {spec!r}")
 
 
