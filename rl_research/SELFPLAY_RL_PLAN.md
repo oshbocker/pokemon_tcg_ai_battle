@@ -111,9 +111,10 @@ The make-or-break measurement. Findings logged in
 - [x] **P0.3 Inference-cost probe.** `scripts/bench_inference.py` — entity-token
       + pointer-head model at 3 size bands, batched forward passes. CPU floor
       measured; **first band = `small` (d256/L6, ~5.6M)**, CPU-submission-safe.
-      Training inference goes batched on GPU (decoupled from CPU envs) ⇒ env stays
-      the bottleneck. GPU number pending a Colab `--device cuda` run. See
-      `PHASE0_THROUGHPUT.md` P0.3.
+      **L4 GPU measured (2026-06-27):** co-located `small` training ≈ 6–13K dec/s —
+      GPU inference *co-bottlenecks* with the env at our scale (not the env-only
+      24K we'd guessed); batch ≥48 across rollout workers amortizes it. Blackwell
+      numbers optional for Phase 4. See `PHASE0_THROUGHPUT.md` Run 4.
 - [x] **P0.4 Determinism & seedability — RESOLVED: engine is unseedable.** Links
       `std::random_device`→`mt19937`, no seed export; identical game in 3 fresh
       procs → 3 different outcomes. **No paired-seed eval.** Mitigation: high-n
@@ -124,8 +125,8 @@ The make-or-break measurement. Findings logged in
       First model-size band pending the P0.3 inference number.
 
 **Exit criteria:** ✅ throughput measured, ✅ seeding resolved, ✅ first model-size
-band set (`small`, ~5.6M, via P0.3). **Phase 0 COMPLETE — cleared for Phase 2.**
-(One follow-up: confirm GPU inference throughput on Colab.)
+band set (`small`, ~5.6M, via P0.3), ✅ L4 GPU inference measured. **Phase 0 FULLY
+COMPLETE.** (Blackwell GPU bench optional, grab at Phase 4.)
 
 ## Phase 1 — Scaffolding & contracts ✅ DONE (2026-06-26)
 

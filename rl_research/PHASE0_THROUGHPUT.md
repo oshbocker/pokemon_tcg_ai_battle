@@ -102,8 +102,8 @@ Two clear conclusions:
 Benchmark: `scripts/bench_inference.py` (needs the `rl` extra). It builds the
 entity-token + pointer-head model from `docs/rl-obs-action.md` §5 at three size
 bands and times batched forward passes. **Run 1 is the laptop CPU *floor*** (the
-same weak i7-10610U as Run 1 above, 4 threads); GPU numbers are pending a Colab
-run (`--device cuda`).
+same weak i7-10610U as Run 1 above, 4 threads); the **L4 GPU numbers are in Run 4
+below** (P0.3 closed 2026-06-27).
 
 Per-**decision** latency (ms), batch=1, by token-count regime *(entities, options)*:
 
@@ -130,15 +130,19 @@ constraints:
    tiny/heuristic time-budget fallback (P6.3) is still worth having as insurance,
    but it's no longer load-bearing for `small`/`medium`.
 
-2. **Training throughput — inference goes on the GPU, decoupled; env stays the
-   bottleneck (to confirm on Colab).** The co-located-CPU "combined" figure the
-   script prints is a worst case, *not* the training ceiling. In training we run
-   CPU env workers in parallel with **batched GPU inference**, so the real ceiling
-   is `min(env_dec_s, gpu_infer_dec_s)`. With env at ~25K (L4) / ~81K (Blackwell)
-   dec/s and a 5.6M model batched on a real GPU, inference should clear that easily
-   — i.e. env stays the bottleneck, as Phase 0 predicted. **Action: run
-   `bench_inference.py --device cuda` on the L4 and Blackwell to fill in
-   `gpu_infer_dec_s` and confirm.**
+2. **Training throughput — GPU inference is NOT free at our scale; it co-bottlenecks
+   with the env on the L4 (measured — revises the Phase-0 guess).** The training
+   ceiling is `min(env_dec_s, gpu_infer_dec_s)`. **L4 GPU result (Run 4 below):
+   `small` does ~14K dec/s (typical 16,20 tokens) but only ~6K (busy 24,60) / ~1K
+   (worst 30,256)** — i.e. comparable to or *below* the ~24K CPU env ceiling. So
+   inference does **not** "clear easily" as first guessed; for `small`, co-located
+   L4 training is **~6–13K decisions/s** (regime-dependent), still ~0.5–1.1 B/day —
+   ample for Phase 3, just not the env-only 24K. Why the modest GPU numbers: at
+   ≤34 M params the forward is **overhead-bound** (small matmuls underutilize the
+   L4), so batch ≥48–128 is needed to amortize — which is exactly what batching
+   decisions across the ~24 rollout workers buys us (P3.1/P4.2). Bigger models cost
+   more (medium ~2–6K, large ~0.3–2.6K dec/s on L4) ⇒ **Phase 4 wants Blackwell
+   and/or a decoupled rollout box**, as planned.
 
 **Decision — first model-size band = `small` (d=256, L=6, h=8, ~5.6M params).**
 It matches the plan's "start ~1–5M to validate the pipeline" (Phase 2), trivially
@@ -147,6 +151,33 @@ fits the 600 s/game CPU budget, and leaves clear headroom to scale (Phase 4:
 it). We chose `small` over `tiny` deliberately for the extra capacity headroom now
 that latency is a non-issue. `tiny` (1.2M) is kept as the optional time-budget
 fallback model (P6.3).
+
+### Run 4 — Colab L4 GPU (2026-06-27): P0.3 GPU number CLOSED
+
+Host: **L4 (23 GB), 12 vCPU / 6 cores / 52 GiB**, torch 2.11+cu128. (The 52 GiB is
+the *training* runtime — distinct from the 8 GB/1.6 vCPU *submission* grader.)
+
+**Env re-confirm** (`bench_throughput.py`, policy `first`): **peak 24,129 dec/s at
+24 workers** (~2.09 B/day), flat 8–32, rolls off past 48. Matches Run 3's ~25K. The
+dataclass-parse tax holds: 13,458 dec/s with `--parse` (≈44% tax) — which we avoid
+by encoding from the raw dict.
+
+**GPU inference** (`bench_inference.py --device cuda`), decisions/s by token regime,
+best batch:
+
+| band (params) | (16,20) typical | (24,60) busy | (30,256) worst |
+|---|--:|--:|--:|
+| small (5.7M) | ~14.3K @b128 | ~6.2K @b48 | ~1.3K @b12 |
+| medium (15.8M) | ~5.9K @b48 | ~2.3K @b12 | ~0.5K |
+| large (33.9M) | ~2.6K @b128 | ~1.2K @b12 | ~0.27K |
+
+Reads: (1) **batch matters** — small jumps 3.3K→14K from batch 12→128 (overhead-
+bound at small scale); batch ≥48 captures most of it. (2) **option-token count
+dominates cost** — the 256-option worst case is ~10× slower than typical, so
+encoding/curbing huge option sets pays off. (3) **`min(env, gpu)` ⇒ co-located L4
+`small` training ≈ 6–13K dec/s**; medium/large make the GPU the clear bottleneck on
+an L4 → Blackwell for Phase 4. **P0.3 fully closed.** (Blackwell GPU numbers still
+worth grabbing when we move to Phase 4, but not blocking.)
 
 ## Key findings
 
@@ -238,9 +269,10 @@ Wars at equal n; we just can't reduce n further with paired seeds.)
 
 ## Open items still in Phase 0
 
-- [x] **P0.3 inference-cost probe** — DONE (see the P0.3 section above).
-      `scripts/bench_inference.py`; CPU floor measured, first band set to `small`
-      (~5.6M). Remaining: run `--device cuda` on Colab to fill in GPU throughput.
+- [x] **P0.3 inference-cost probe** — DONE & CLOSED (CPU floor + L4 GPU, Run 4).
+      `scripts/bench_inference.py`; first band = `small` (~5.6M). L4 co-located
+      `small` training ≈ 6–13K dec/s (GPU inference co-bottlenecks with env at our
+      scale). Blackwell GPU numbers optional for Phase 4.
 - [x] **P0.4 determinism / seeding** — resolved above: unseedable; compensate with
       high-n unpaired eval + side-swap.
 - [x] **P0.5 throughput characterized** across L4 / Blackwell (+ A100 by CPU
