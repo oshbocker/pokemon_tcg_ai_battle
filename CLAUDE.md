@@ -74,7 +74,38 @@ pyproject), so the encoding tests stay torch-free.
   `docs/rl-obs-action.md`; invariants: `tests/test_encoding.py`.
 - `src/ptcg_battle/eval_harness.py` + `scripts/eval.py` — high-n side-swapped
   unpaired eval vs a fixed suite (engine is unseedable), resumable CSV, Wilson CIs.
+  Eval agents: `heuristic`/`random`/`first`/`mirror` + **`model:<path>`** (a trained
+  checkpoint, greedy; torch imported lazily).
 - `scripts/bench_inference.py` — P0.3 policy inference-cost probe (needs `rl` extra).
+- `src/ptcg_battle/dist_collector.py` (+ torch-free `dist_worker.py`) — P3.1
+  distributed self-play collector: a persistent pool of W env-worker processes
+  feeding one central batched-GPU inference loop. Drop-in for `ppo.collect_rollout`.
+- `scripts/train_selfplay.py` — self-play PPO with `--collector dist`, KL early-stop,
+  LR/entropy decay, and `--gate` best-checkpoint promotion vs a frozen last-best.
+- `scripts/ablate_option_rank_selfplay.py` — the definitive self-play option-rank A/B.
+
+## Colab artifacts (Google Drive, not git)
+
+Phase 0–3 runs on Colab (L4); `notebooks/colab_selfplay.ipynb` is the Phase-3
+notebook. Following the Orbit Wars workflow, **training artifacts persist on Google
+Drive, never git** — the notebook mounts Drive and writes every run's
+checkpoints/eval-CSVs/logs under `MyDrive/ptcg_outputs/`, so a dropped session
+resumes and nothing large goes through the repo (the env binary already lives in
+it). Pull results back with rclone:
+
+```bash
+# One-time: install rclone + add a 'gdrive' remote
+sudo apt install rclone        # or: brew install rclone / curl https://rclone.org/install.sh | sudo bash
+rclone config                  # New remote → name "gdrive" → type "drive" → OAuth
+
+# Then fetch what you need
+uv run python scripts/download_artifacts.py --list                 # run dirs on Drive
+uv run python scripts/download_artifacts.py --logs                 # colab_*.txt → rl_research/ (commit these)
+uv run python scripts/download_artifacts.py --run ablation_sp      # A/B ckpts + CSVs → outputs/
+```
+
+Commit the small `rl_research/colab_*.txt` logs as the dated experiment record;
+checkpoints/CSVs stay gitignored under `outputs/`.
 
 ## Strategy & RL plan (read before building the agent)
 
