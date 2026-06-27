@@ -190,6 +190,12 @@ class PtcgNet(nn.Module):
         self.query_proj = nn.Linear(d, d)
         self.selected_proj = nn.Linear(d, d)  # running "picked so far" for multi-pick
         self.stop_key = nn.Parameter(torch.zeros(d))  # learned STOP candidate
+        # Pointer temperature: scale the q·k logits by 1/√d (docs/rl-obs-action.md §5).
+        # Without it a d=256 dot product has std ~16, saturating the softmax at init →
+        # near-zero entropy and an exploding first-update KL. Applied at EVERY logit
+        # site (act/forward/evaluate_actions + the STOP key) so the act↔evaluate
+        # distributions stay identical (the PPO-ratio parity invariant).
+        self.logit_scale = d**-0.5
         self.value_head = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 1), nn.Tanh())
 
     # -- shared encode: tokens -> trunk -> (option hidden, query base, value) --
@@ -238,7 +244,7 @@ class PtcgNet(nn.Module):
         This is the per-decision actor used directly for `maxCount==1` (the common
         case) and as the first step of the multi-pick loop."""
         enc = self._encode(batch)
-        logits = torch.einsum("bod,bd->bo", enc["opt_h"], enc["query"])
+        logits = torch.einsum("bod,bd->bo", enc["opt_h"], enc["query"]) * self.logit_scale
         logits = logits.masked_fill(~enc["opt_mask"], NEG_INF)
         return logits, enc["value"]
 
@@ -304,8 +310,10 @@ class PtcgNet(nn.Module):
         if bool(onestep.any()):
             idx = onestep.nonzero(as_tuple=True)[0]
             oh, q = opt_h[idx], query[idx]
-            opt_logits = torch.einsum("bod,bd->bo", oh, q).masked_fill(~opt_mask[idx], NEG_INF)
-            stop = (q * self.stop_key).sum(-1, keepdim=True)  # [n,1]
+            opt_logits = (torch.einsum("bod,bd->bo", oh, q) * self.logit_scale).masked_fill(
+                ~opt_mask[idx], NEG_INF
+            )
+            stop = (q * self.stop_key).sum(-1, keepdim=True) * self.logit_scale  # [n,1]
             stop = stop.masked_fill((min_c[idx] != 0).unsqueeze(1), NEG_INF)  # stop only if min==0
             cat = torch.cat([opt_logits, stop], dim=1)  # [n, O+1]; col O = STOP
             lp_all = F.log_softmax(cat, dim=-1)
@@ -346,9 +354,10 @@ class PtcgNet(nn.Module):
         return logp, entropy
 
     def _step_cat(self, keys, q, avail, *, allow_stop: bool):
-        logits = (keys @ q).masked_fill(~avail, NEG_INF)
+        logits = (keys @ q * self.logit_scale).masked_fill(~avail, NEG_INF)
         if allow_stop:
-            return torch.cat([logits, (self.stop_key * q).sum().view(1)])
+            stop = (self.stop_key * q).sum() * self.logit_scale
+            return torch.cat([logits, stop.view(1)])
         return logits
 
 
