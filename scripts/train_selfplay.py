@@ -34,6 +34,7 @@ import torch  # noqa: E402
 from ptcg_battle.model import SIZE_BANDS, ModelConfig, PtcgNet, param_counts  # noqa: E402
 from ptcg_battle.ppo import (  # noqa: E402
     PPOConfig,
+    adapt_ent_coef,
     collect_rollout,
     load_deck,
     play_match,
@@ -60,7 +61,9 @@ def main() -> int:
     )
     ap.add_argument("--iters", type=int, default=40)
     ap.add_argument("--games-per-iter", type=int, default=64)
-    ap.add_argument("--epochs", type=int, default=4)
+    ap.add_argument(
+        "--epochs", type=int, default=2, help="fixed PPO passes/iter (update-size control)"
+    )
     ap.add_argument("--minibatch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument(
@@ -68,10 +71,19 @@ def main() -> int:
     )
     ap.add_argument("--gamma", type=float, default=0.997)
     ap.add_argument("--lam", type=float, default=0.95)
-    ap.add_argument("--ent-coef", type=float, default=0.01)
-    ap.add_argument("--ent-final", type=float, default=None, help="linear-decay entropy target")
+    ap.add_argument("--ent-coef", type=float, default=0.01, help="initial entropy coef")
     ap.add_argument(
-        "--target-kl", type=float, default=0.5, help="per-minibatch PPO KL trust region (0=off)"
+        "--ent-final", type=float, default=None, help="linear-decay target (if --target-entropy<=0)"
+    )
+    ap.add_argument(
+        "--target-entropy",
+        type=float,
+        default=0.05,
+        help="adaptive-entropy setpoint (mean nats); auto-tunes ent_coef. <=0 = use --ent-final decay",
+    )
+    ap.add_argument("--ent-gain", type=float, default=0.3, help="adaptive-entropy controller gain")
+    ap.add_argument(
+        "--target-kl", type=float, default=1.5, help="per-minibatch KL circuit breaker (0=off)"
     )
     # P3.1 distributed collector + P3.3 best-checkpoint gating.
     ap.add_argument("--collector", default="single", choices=["single", "dist"])
@@ -104,6 +116,7 @@ def main() -> int:
     a.out.mkdir(parents=True, exist_ok=True)
     lr_final = a.lr if a.lr_final is None else a.lr_final
     ent_final = a.ent_coef if a.ent_final is None else a.ent_final
+    adaptive_ent = a.target_entropy > 0  # controller vs. fixed decay schedule
 
     # P3.1: persistent distributed worker pool (built once, reused every iter).
     collector = None
@@ -121,7 +134,13 @@ def main() -> int:
         f"train  size={a.size}({total / 1e6:.1f}M, non-emb {nonemb / 1e6:.1f}M)  "
         f"option_rank={cfg.use_option_rank}  opponent={a.opponent}  device={a.device}\n"
         f"       iters={a.iters} games/iter={a.games_per_iter} epochs={a.epochs} mb={a.minibatch} "
-        f"lr={a.lr}->{lr_final} ent={a.ent_coef}->{ent_final} kl={a.target_kl} gamma={a.gamma}\n"
+        f"lr={a.lr}->{lr_final} "
+        + (
+            f"ent~target={a.target_entropy}(adaptive)"
+            if adaptive_ent
+            else f"ent={a.ent_coef}->{ent_final}"
+        )
+        + f" kl_cut={a.target_kl} gamma={a.gamma}\n"
         f"       collector={a.collector}"
         + (f"(W={a.workers})" if a.collector == "dist" else "")
         + (f"  gate>{a.gate_threshold:.0%}/{a.gate_games}g every {a.gate_every}" if a.gate else "")
@@ -134,7 +153,8 @@ def main() -> int:
             cur_lr = _lerp(a.lr, lr_final, frac)
             for pg in opt.param_groups:
                 pg["lr"] = cur_lr
-            ppo_cfg.ent_coef = _lerp(a.ent_coef, ent_final, frac)
+            if not adaptive_ent:  # fixed decay; adaptive coef is updated after the step
+                ppo_cfg.ent_coef = _lerp(a.ent_coef, ent_final, frac)
 
             t0 = time.time()
             if collector is not None:
@@ -158,12 +178,16 @@ def main() -> int:
                     seed=a.seed + it,
                 )
             m = ppo_update(model, opt, buf, ppo_cfg, device=a.device)
+            if adaptive_ent:  # hold mean entropy at the setpoint by tuning ent_coef
+                ppo_cfg.ent_coef = adapt_ent_coef(
+                    ppo_cfg.ent_coef, m["entropy"], a.target_entropy, gain=a.ent_gain
+                )
             dt = time.time() - t0
             stop = "*" if m.get("stopped_kl") else ""
             line = (
                 f"it {it:>3}  N={len(buf):>5}  pg={m['pg_loss']:+.3f} vf={m['vf_loss']:.3f} "
-                f"ent={m['entropy']:.3f} kl={m['approx_kl']:+.3f}{stop} clip={m['clipfrac']:.2f} "
-                f"upd={int(m.get('updates', 0))} lr={cur_lr:.1e}  {dt:.1f}s"
+                f"ent={m['entropy']:.3f} entc={ppo_cfg.ent_coef:.4f} kl={m['approx_kl']:+.3f}{stop} "
+                f"clip={m['clipfrac']:.2f} upd={int(m.get('updates', 0))} lr={cur_lr:.1e}  {dt:.1f}s"
             )
 
             # P3.3 gated promotion: beat the frozen last-best by the threshold to promote.

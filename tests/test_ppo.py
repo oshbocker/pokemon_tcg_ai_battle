@@ -18,6 +18,7 @@ torch = pytest.importorskip("torch")
 from ptcg_battle.model import ModelConfig, PtcgNet, collate  # noqa: E402
 from ptcg_battle.ppo import (  # noqa: E402
     PPOConfig,
+    adapt_ent_coef,
     collect_rollout,
     gae_terminal,
     load_deck,
@@ -123,6 +124,25 @@ def test_ppo_kl_trust_region_stops_early():
     assert tight["stopped_kl"] == 1.0
     assert tight["updates"] < full["updates"]  # trust region cut the update short
     assert full["stopped_kl"] == 0.0
+
+
+def test_adapt_ent_coef_controller():
+    """Raises the coef when entropy is below target, lowers it above, no-ops at the
+    setpoint, respects the clamp, and is disabled when target<=0."""
+    target = 0.05
+    assert adapt_ent_coef(0.01, entropy=0.0, target_entropy=target) > 0.01  # too deterministic → up
+    assert adapt_ent_coef(0.01, entropy=0.5, target_entropy=target) < 0.01  # too random → down
+    # at the setpoint the step is ~1x
+    assert abs(adapt_ent_coef(0.01, entropy=target, target_entropy=target) - 0.01) < 1e-9
+    # bounded multiplicative step: never more than e^gain per call
+    import math
+
+    assert adapt_ent_coef(0.01, 0.0, target, gain=0.3) <= 0.01 * math.exp(0.3) + 1e-9
+    # clamps
+    assert adapt_ent_coef(0.19, 0.0, target, hi=0.2) <= 0.2
+    assert adapt_ent_coef(1.1e-3, 0.5, target, lo=1e-3) >= 1e-3
+    # disabled
+    assert adapt_ent_coef(0.01, 0.0, target_entropy=0.0) == 0.01
 
 
 def test_quick_eval_smoke():

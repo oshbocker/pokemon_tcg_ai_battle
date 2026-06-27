@@ -52,6 +52,7 @@ from ptcg_battle.eval_harness import (  # noqa: E402
 from ptcg_battle.model import SIZE_BANDS, PtcgNet, param_counts  # noqa: E402
 from ptcg_battle.ppo import (  # noqa: E402
     PPOConfig,
+    adapt_ent_coef,
     load_deck,
     play_match,
     ppo_update,
@@ -78,9 +79,13 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
     model = PtcgNet(cfg).to(args.device)
     total, nonemb = param_counts(model)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    ppo_cfg = PPOConfig(epochs=args.epochs, minibatch=args.minibatch, target_kl=args.target_kl)
+    ppo_cfg = PPOConfig(
+        epochs=args.epochs,
+        minibatch=args.minibatch,
+        ent_coef=args.ent_coef,
+        target_kl=args.target_kl,
+    )
     lr_final = args.lr * args.lr_decay
-    ent_final = args.ent_coef * args.ent_decay
 
     frozen_best = copy.deepcopy(model).eval()
     best_state = copy.deepcopy(model.state_dict())
@@ -101,12 +106,14 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
             frac = (it - 1) / max(1, args.iters - 1)
             for pg in opt.param_groups:
                 pg["lr"] = _lerp(args.lr, lr_final, frac)
-            ppo_cfg.ent_coef = _lerp(args.ent_coef, ent_final, frac)
 
             buf = collector.collect(
                 model, args.games_per_iter, device=args.device, seed=seed * 1000 + it
             )
             m = ppo_update(model, opt, buf, ppo_cfg, device=args.device)
+            ppo_cfg.ent_coef = adapt_ent_coef(
+                ppo_cfg.ent_coef, m["entropy"], args.target_entropy, gain=args.ent_gain
+            )
 
             if it % args.gate_every == 0 or it == args.iters:
                 r = play_match(
@@ -123,7 +130,8 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
                     print(
                         f"    it {it:>3} N={len(buf):>5} kl={m['approx_kl']:+.3f}{stop} "
                         f"upd={int(m.get('updates', 0))} ent={m['entropy']:.3f} "
-                        f"gate={r['winrate'] * 100:.0f}% vsRand={sr['winrate'] * 100:.0f}%",
+                        f"entc={ppo_cfg.ent_coef:.4f} gate={r['winrate'] * 100:.0f}% "
+                        f"vsRand={sr['winrate'] * 100:.0f}%",
                         flush=True,
                     )
     finally:
@@ -168,18 +176,21 @@ def main() -> int:
     ap.add_argument("--iters", type=int, default=80)
     ap.add_argument("--games-per-iter", type=int, default=128)
     ap.add_argument("--workers", type=int, default=12)
-    ap.add_argument("--epochs", type=int, default=4)
+    ap.add_argument(
+        "--epochs", type=int, default=2, help="fixed PPO passes/iter (update-size control)"
+    )
     ap.add_argument("--minibatch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--lr-decay", type=float, default=0.33, help="final LR = lr * this")
-    ap.add_argument("--ent-coef", type=float, default=0.01)
+    ap.add_argument("--ent-coef", type=float, default=0.01, help="initial entropy coef")
     ap.add_argument(
-        "--ent-decay",
+        "--target-entropy",
         type=float,
-        default=0.5,
-        help="final ent = ent * this (keep a floor; decaying to ~0 let the ON arm collapse)",
+        default=0.05,
+        help="adaptive-entropy setpoint (mean nats); auto-tunes ent_coef to hold exploration",
     )
-    ap.add_argument("--target-kl", type=float, default=0.5, help="per-minibatch KL trust region")
+    ap.add_argument("--ent-gain", type=float, default=0.3, help="adaptive-entropy controller gain")
+    ap.add_argument("--target-kl", type=float, default=1.5, help="per-minibatch KL circuit breaker")
     ap.add_argument("--gate-every", type=int, default=5)
     ap.add_argument("--gate-games", type=int, default=200)
     ap.add_argument("--gate-threshold", type=float, default=0.55)

@@ -16,6 +16,7 @@ absolute, so the chdir doesn't leak.
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import random
 import sys
@@ -247,12 +248,42 @@ class PPOConfig:
     ent_coef: float = 0.01
     max_grad_norm: float = 0.5
     lr: float = 3e-4
-    # KL trust region, enforced per-minibatch (see ppo_update): bound each
-    # iteration's policy drift to ~this running-mean approx-KL. 0.5 is the
-    # demonstrated-safe operating point (the stable 40-iter run sat at ~0.2-0.7)
-    # while still cutting the KL~3 spikes that collapsed a low-entropy A/B arm.
-    # Lower it (→0.03) for a tighter, more textbook trust region; 0 = off.
-    target_kl: float = 0.5
+    # KL **circuit breaker**, enforced per-minibatch (see ppo_update): abort the
+    # update if this epoch's running-mean approx-KL blows past the threshold. Set
+    # HIGH (1.5) so it only catches catastrophic spikes (the KL~3 collapse) and
+    # leaves the *update size* to be controlled by a fixed, consistent `epochs` —
+    # using it as the primary controller (default 0.5) made the update count swing
+    # 3↔239 per iter, which translated into seed-dependent outcome variance. 0=off.
+    target_kl: float = 1.5
+
+
+def adapt_ent_coef(
+    coef: float,
+    entropy: float,
+    target_entropy: float,
+    *,
+    gain: float = 0.3,
+    lo: float = 1e-3,
+    hi: float = 0.2,
+) -> float:
+    """Setpoint controller for the entropy coefficient (call once per iteration).
+
+    Nudges `coef` **up** when the policy's mean entropy is below `target_entropy`
+    (too deterministic) and **down** when above, as a bounded multiplicative step
+    in log-space, then clamps to `[lo, hi]`. `target_entropy <= 0` disables it
+    (returns `coef` unchanged).
+
+    Why: the fixed entropy *decay schedule* let entropy collapse to ~0.005 in
+    self-play, dropping the policy into a bad deterministic basin (a `small` run
+    converged *below* random). A controller holds exploration at a setpoint
+    instead of blindly decaying it — and `opt_rank` ON, which collapses entropy
+    fastest, is exactly the case that needs it.
+    """
+    if target_entropy <= 0:
+        return coef
+    err = (target_entropy - entropy) / target_entropy  # >0 → too deterministic → raise
+    coef *= math.exp(gain * max(-1.0, min(1.0, err)))  # bounded step in [e^-gain, e^+gain]
+    return min(hi, max(lo, coef))
 
 
 def ppo_update(
