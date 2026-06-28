@@ -90,6 +90,17 @@ def main() -> int:
     # P3.1 distributed collector + P3.3 best-checkpoint gating.
     ap.add_argument("--collector", default="single", choices=["single", "dist"])
     ap.add_argument("--workers", type=int, default=8, help="dist collector worker procs")
+    # P3.4 league (dist + --opponent self): per-game opponent from a pool — fixes the
+    # pure-self-play collapse. Weights are relative; 0 omits that opponent.
+    ap.add_argument("--league", action="store_true", help="train vs a league, not pure self-play")
+    ap.add_argument("--pool-size", type=int, default=4, help="max past checkpoints in the pool")
+    ap.add_argument("--snapshot-every", type=int, default=5, help="iters between pool snapshots")
+    ap.add_argument("--w-self", type=float, default=1.0)
+    ap.add_argument("--w-past", type=float, default=2.0, help="total weight for past checkpoints")
+    ap.add_argument("--w-heuristic", type=float, default=1.0)
+    ap.add_argument("--w-random", type=float, default=0.5)
+    ap.add_argument("--league-kaggle", default=None, help="kaggle_agents/<name> to add to the pool")
+    ap.add_argument("--w-kaggle", type=float, default=1.0)
     ap.add_argument(
         "--gate", action="store_true", help="promote best.pt by gating vs frozen last-best"
     )
@@ -120,13 +131,34 @@ def main() -> int:
     ent_final = a.ent_coef if a.ent_final is None else a.ent_final
     adaptive_ent = a.target_entropy > 0  # controller vs. fixed decay schedule
 
-    # P3.1: persistent distributed worker pool (built once, reused every iter).
+    # P3.1/P3.4: persistent distributed worker pool (built once, reused every iter).
+    # The league (per-game opponent) is the pure-self-play collapse fix.
+    use_league = a.league and a.opponent == "self"
+    pool: dict[str, PtcgNet] = {}  # frozen past checkpoints (id -> model)
     collector = None
+    league = None
     if a.collector == "dist":
-        from ptcg_battle.dist_collector import DistributedCollector
+        from ptcg_battle.dist_collector import (
+            DistributedCollector,
+            League,
+            build_league,
+            league_fixed_specs,
+        )
 
+        if use_league:
+            fixed = league_fixed_specs(
+                w_heuristic=a.w_heuristic,
+                w_random=a.w_random,
+                kaggle=a.league_kaggle,
+                w_kaggle=a.w_kaggle,
+            )
+        elif a.opponent != "self":  # single fixed-opponent training (legacy)
+            fixed = [a.opponent] if a.opponent in ("random", "first", "heuristic") else []
+            league = League(mix=[(a.opponent, 1.0)])
+        else:  # pure self-play
+            fixed = []
         collector = DistributedCollector(
-            deck, n_workers=a.workers, opponent=a.opponent, max_steps=4000
+            deck, n_workers=a.workers, fixed_specs=fixed, max_steps=4000
         )
 
     # P3.3: frozen last-best opponent for gated promotion (the anti-collapse net).
@@ -145,6 +177,13 @@ def main() -> int:
         + f" kl_cut={a.target_kl} gamma={a.gamma}\n"
         f"       collector={a.collector}"
         + (f"(W={a.workers})" if a.collector == "dist" else "")
+        + (
+            f"  league: self={a.w_self} past={a.w_past}(≤{a.pool_size}) "
+            f"heur={a.w_heuristic} rand={a.w_random}"
+            + (f" kaggle:{a.league_kaggle}={a.w_kaggle}" if a.league_kaggle else "")
+            if use_league
+            else ""
+        )
         + (f"  gate>{a.gate_threshold:.0%}/{a.gate_games}g every {a.gate_every}" if a.gate else "")
         + "\n"
     )
@@ -158,11 +197,23 @@ def main() -> int:
             if not adaptive_ent:  # fixed decay; adaptive coef is updated after the step
                 ppo_cfg.ent_coef = _lerp(a.ent_coef, ent_final, frac)
 
+            if use_league:  # rebuild the league each iter against the current pool
+                league = build_league(
+                    pool,
+                    w_self=a.w_self,
+                    w_past=a.w_past,
+                    w_heuristic=a.w_heuristic,
+                    w_random=a.w_random,
+                    kaggle=a.league_kaggle,
+                    w_kaggle=a.w_kaggle,
+                )
+
             t0 = time.time()
             if collector is not None:
                 buf = collector.collect(
                     model,
                     a.games_per_iter,
+                    league=league,
                     gamma=a.gamma,
                     lam=a.lam,
                     device=a.device,
@@ -184,12 +235,20 @@ def main() -> int:
                 ppo_cfg.ent_coef = adapt_ent_coef(
                     ppo_cfg.ent_coef, m["entropy"], a.target_entropy, gain=a.ent_gain, lo=a.ent_coef
                 )
+            if use_league and (it % a.snapshot_every == 0):  # add a frozen "past me" to the pool
+                snap = copy.deepcopy(model).eval()
+                for p in snap.parameters():
+                    p.requires_grad_(False)
+                pool[f"it{it}"] = snap
+                while len(pool) > a.pool_size:  # evict oldest
+                    del pool[next(iter(pool))]
             dt = time.time() - t0
             stop = "*" if m.get("stopped_kl") else ""
+            lg = f" pool={len(pool)}" if use_league else ""
             line = (
                 f"it {it:>3}  N={len(buf):>5}  pg={m['pg_loss']:+.3f} vf={m['vf_loss']:.3f} "
                 f"ent={m['entropy']:.3f} entc={ppo_cfg.ent_coef:.4f} kl={m['approx_kl']:+.3f}{stop} "
-                f"clip={m['clipfrac']:.2f} upd={int(m.get('updates', 0))} lr={cur_lr:.1e}  {dt:.1f}s"
+                f"clip={m['clipfrac']:.2f} upd={int(m.get('updates', 0))} lr={cur_lr:.1e}{lg}  {dt:.1f}s"
             )
 
             # P3.3 gated promotion: beat the frozen last-best by the threshold to promote.

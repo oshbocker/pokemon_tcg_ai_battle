@@ -82,7 +82,7 @@ def test_dist_collector_selfplay_smoke():
     torch.manual_seed(0)
     model = PtcgNet(TINY)
     deck = load_deck()
-    with DistributedCollector(deck, n_workers=2, opponent="self") as col:
+    with DistributedCollector(deck, n_workers=2) as col:
         buf = col.collect(model, n_games=4, device="cpu", seed=1)
     _assert_valid_buffer(buf)
     opt = torch.optim.Adam(model.parameters(), lr=3e-4)
@@ -96,7 +96,7 @@ def test_dist_collector_reusable_across_iters():
     torch.manual_seed(0)
     model = PtcgNet(TINY)
     deck = load_deck()
-    col = DistributedCollector(deck, n_workers=2, opponent="self")
+    col = DistributedCollector(deck, n_workers=2)
     try:
         b1 = col.collect(model, n_games=2, device="cpu", seed=1)
         b2 = col.collect(model, n_games=2, device="cpu", seed=2)
@@ -106,12 +106,34 @@ def test_dist_collector_reusable_across_iters():
     _assert_valid_buffer(b2)
 
 
+def test_dist_collector_league_mix():
+    """A league mixing self + a frozen past-checkpoint model + a fixed agent yields a
+    valid buffer; only the current policy's decisions are trained (frozen-opponent
+    and fixed-opponent decisions never enter the buffer)."""
+    from ptcg_battle.dist_collector import League
+
+    torch.manual_seed(0)
+    model = PtcgNet(TINY)
+    frozen = PtcgNet(TINY).eval()  # a stand-in "past checkpoint"
+    deck = load_deck()
+    league = League(
+        mix=[("self", 1.0), ("model:past", 1.0), ("random", 1.0)],
+        models={"past": frozen},
+    )
+    with DistributedCollector(deck, n_workers=3, fixed_specs=["random"]) as col:
+        buf = col.collect(model, n_games=6, league=league, device="cpu", seed=5)
+    _assert_valid_buffer(buf)
+
+
 def test_dist_collector_fixed_opponent_one_seat():
     """Against a fixed opponent only the model seat is buffered; the buffer is still
     valid and non-empty."""
+    from ptcg_battle.dist_collector import League
+
     torch.manual_seed(0)
     model = PtcgNet(TINY)
     deck = load_deck()
-    with DistributedCollector(deck, n_workers=2, opponent="first") as col:
-        buf = col.collect(model, n_games=4, device="cpu", seed=3)
+    league = League(mix=[("first", 1.0)])
+    with DistributedCollector(deck, n_workers=2, fixed_specs=["first"]) as col:
+        buf = col.collect(model, n_games=4, league=league, device="cpu", seed=3)
     _assert_valid_buffer(buf)

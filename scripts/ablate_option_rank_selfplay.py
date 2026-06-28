@@ -45,7 +45,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch  # noqa: E402
 
-from ptcg_battle.dist_collector import DistributedCollector  # noqa: E402
+from ptcg_battle.dist_collector import (  # noqa: E402
+    DistributedCollector,
+    build_league,
+    league_fixed_specs,
+)
 from ptcg_battle.eval_harness import (  # noqa: E402
     MatchupSummary,
     evaluate,
@@ -102,20 +106,39 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
 
     _save(model.state_dict(), float("nan"), 0)  # fallback so the file always exists
     tag = "ON " if use_rank else "OFF"
+    # League (P3.4): both arms train vs the same opponent mix — fixes the pure
+    # self-play collapse that confounded the first A/B.
+    pool: dict[str, PtcgNet] = {}
+    fixed = league_fixed_specs(
+        w_heuristic=args.w_heuristic,
+        w_random=args.w_random,
+        kaggle=args.league_kaggle,
+        w_kaggle=args.w_kaggle,
+    )
     print(
         f"  [{tag} seed={seed}] {total / 1e6:.1f}M (non-emb {nonemb / 1e6:.1f}M)  "
-        f"self-play  W={args.workers}  iters={args.iters}  select=best-vs-random",
+        f"league(self={args.w_self},past={args.w_past}≤{args.pool_size},heur={args.w_heuristic},"
+        f"rand={args.w_random})  W={args.workers}  iters={args.iters}  select=best-vs-random",
         flush=True,
     )
-    collector = DistributedCollector(deck, n_workers=args.workers, opponent="self")
+    collector = DistributedCollector(deck, n_workers=args.workers, fixed_specs=fixed)
     try:
         for it in range(1, args.iters + 1):
             frac = (it - 1) / max(1, args.iters - 1)
             for pg in opt.param_groups:
                 pg["lr"] = _lerp(args.lr, lr_final, frac)
 
+            league = build_league(
+                pool,
+                w_self=args.w_self,
+                w_past=args.w_past,
+                w_heuristic=args.w_heuristic,
+                w_random=args.w_random,
+                kaggle=args.league_kaggle,
+                w_kaggle=args.w_kaggle,
+            )
             buf = collector.collect(
-                model, args.games_per_iter, device=args.device, seed=seed * 1000 + it
+                model, args.games_per_iter, league=league, device=args.device, seed=seed * 1000 + it
             )
             m = ppo_update(model, opt, buf, ppo_cfg, device=args.device)
             ppo_cfg.ent_coef = adapt_ent_coef(
@@ -125,6 +148,13 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
                 gain=args.ent_gain,
                 lo=args.ent_coef,
             )
+            if it % args.snapshot_every == 0:  # add a frozen "past me" to the pool
+                snap = copy.deepcopy(model).eval()
+                for p in snap.parameters():
+                    p.requires_grad_(False)
+                pool[f"it{it}"] = snap
+                while len(pool) > args.pool_size:
+                    del pool[next(iter(pool))]
 
             if it % args.sel_every == 0 or it == args.iters:
                 wr = quick_eval(model, deck, "random", args.sel_n, device=args.device, seed=7)[
@@ -199,6 +229,15 @@ def main() -> int:
     )
     ap.add_argument("--ent-gain", type=float, default=0.4, help="adaptive-entropy controller gain")
     ap.add_argument("--target-kl", type=float, default=1.5, help="per-minibatch KL circuit breaker")
+    # P3.4 league — both arms train vs the same per-game opponent mix.
+    ap.add_argument("--pool-size", type=int, default=4, help="max past checkpoints in the pool")
+    ap.add_argument("--snapshot-every", type=int, default=5, help="iters between pool snapshots")
+    ap.add_argument("--w-self", type=float, default=1.0)
+    ap.add_argument("--w-past", type=float, default=2.0, help="total weight for past checkpoints")
+    ap.add_argument("--w-heuristic", type=float, default=1.0)
+    ap.add_argument("--w-random", type=float, default=0.5)
+    ap.add_argument("--league-kaggle", default=None, help="kaggle_agents/<name> to add to the pool")
+    ap.add_argument("--w-kaggle", type=float, default=1.0)
     ap.add_argument(
         "--sel-every", type=int, default=5, help="iters between checkpoint-selection evals"
     )

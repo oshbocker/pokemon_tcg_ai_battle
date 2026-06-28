@@ -36,7 +36,15 @@ rl = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-extend-exclude = ["outputs", "notebooks", ".venv", "submissions", "agent/cg", "data"]
+extend-exclude = [
+    "outputs",
+    "notebooks",
+    ".venv",
+    "submissions",
+    "agent/cg",
+    "agent/kaggle_agents",  # vendored community Kaggle agents (league opponents) — not ours to lint
+    "data",
+]
 
 [tool.ruff.lint]
 # E/F = pyflakes+pycodestyle, I = isort, UP = pyupgrade,

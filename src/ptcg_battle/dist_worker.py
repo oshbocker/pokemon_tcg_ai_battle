@@ -1,4 +1,4 @@
-"""Torch-free env-worker for the distributed collector (Phase 3, P3.1).
+"""Torch-free env-worker for the distributed collector (Phase 3, P3.1 / P3.4 league).
 
 Deliberately split out of `dist_collector.py` so the spawned worker processes
 import *only this* (engine + the numpy-only encoder) and never pull in torch — the
@@ -6,15 +6,28 @@ central process is the sole torch/GPU owner. That keeps each worker's RAM and
 spawn cost low (the L4 box is vCPU- and RAM-constrained), and enforces the design
 rule that workers are pure engine steppers.
 
-A worker owns one `battle_ptr`, plays one game at a time, and for every decision
-that belongs to the model it ships an `EncodedObs` to the central inference loop
-and blocks on the chosen action. Fixed opponents (`random`/`first`/`heuristic`)
-are stepped locally. See `dist_collector.DistributedCollector` for the protocol.
+A worker owns one `battle_ptr`, plays one game at a time, and is told per game (via
+the PLAY token) what the *opponent* seat is — `opp_spec`:
+
+  * ``"self"``            — opponent seat is the **current** policy (both seats
+                           trained); routed to central with policy id ``"cur"``.
+  * ``"model:<id>"``      — opponent seat is a **frozen past checkpoint** in the
+                           central pool; routed to central with that policy id,
+                           **not** trained.
+  * a fixed-agent spec    — ``"random"`` / ``"first"`` / ``"heuristic"`` /
+                           ``"kaggle:<name>"`` — stepped **locally** in the worker
+                           (torch-free), not trained.
+
+The acting (model-seat) decisions are always the current policy (``"cur"``). This
+per-game opponent mix is the league (P3.4): it breaks the pure-self-play
+mutual-determinism collapse by facing the trainee with diverse, competent,
+non-degenerate opponents. See `dist_collector.DistributedCollector`.
 """
 
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import os
 import queue as queue_mod
 import random
@@ -23,6 +36,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 AGENT_DIR = REPO / "agent"
+KAGGLE_AGENT_DIR = AGENT_DIR / "kaggle_agents"
 
 # Request-queue message tags (worker -> central).
 DECIDE = "decide"
@@ -30,18 +44,30 @@ DONE = "done"
 # Task-queue tags (central -> worker).
 PLAY = "play"
 STOP = "stop"
+# Policy id for the current (trained) net in a central decide request.
+CUR = "cur"
 
 
-def _make_worker_opponent(spec: str, deck: list[int], rng: random.Random, to_oc):
-    """A torch-free fixed opponent stepped inside the worker (mirrors ppo._make_fixed_opponent)."""
+def _load_agent_module(path: Path, name: str):
+    """Import a standalone agent module (its own globals) for `agent(obs)->action`."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _make_fixed_agent(spec: str, deck: list[int], rng: random.Random, to_oc):
+    """Resolve a fixed-agent `opp_spec` to a torch-free `agent(obs)->list[int]`.
+
+    `random`/`first` are stepped here; `heuristic` loads `agent/main.py`; a
+    `kaggle:<name>` spec loads `agent/kaggle_agents/<name>.py` — both expose the
+    standard `agent(obs)` contract and keep their own module-global turn state."""
     if spec == "heuristic":
-        import importlib.util
-
-        s = importlib.util.spec_from_file_location("opp_heur", AGENT_DIR / "main.py")
-        assert s is not None and s.loader is not None
-        mod = importlib.util.module_from_spec(s)
-        s.loader.exec_module(mod)
-        return mod.agent
+        return _load_agent_module(AGENT_DIR / "main.py", "opp_heuristic").agent
+    if spec.startswith("kaggle:"):
+        name = spec[len("kaggle:") :]
+        return _load_agent_module(KAGGLE_AGENT_DIR / f"{name}.py", f"opp_{name}").agent
 
     def fn(obs_dict):
         oc = to_oc(obs_dict)
@@ -65,11 +91,13 @@ def _drain_stale(resp_q) -> None:
             return
 
 
-def worker_main(wid, opponent, deck, max_steps, task_q, req_q, resp_q):  # pragma: no cover
-    """Run forever: pull a game token, play it (asking central for model moves), repeat.
+def worker_main(wid, fixed_specs, deck, max_steps, task_q, req_q, resp_q):  # pragma: no cover
+    """Run forever: pull a game token, play it (per-game opponent), repeat.
 
-    Runs in a spawned subprocess, so it imports the engine + encoder itself and is
-    never measured by the parent's coverage.
+    `fixed_specs` is the set of locally-stepped opponent specs this worker may be
+    asked to play (built once at startup); `"self"` / `"model:<id>"` opponents are
+    routed to the central GPU loop instead. Runs in a spawned subprocess, so it
+    imports the engine + encoder itself and is never measured by parent coverage.
     """
     os.chdir(AGENT_DIR)
     sys.path.insert(0, str(AGENT_DIR))
@@ -83,15 +111,17 @@ def worker_main(wid, opponent, deck, max_steps, task_q, req_q, resp_q):  # pragm
     from .encoding import encode_observation
 
     rng = random.Random(7919 + wid)
-    opp_fn = None if opponent == "self" else _make_worker_opponent(opponent, deck, rng, to_oc)
+    fixed_agents = {s: _make_fixed_agent(s, deck, rng, to_oc) for s in fixed_specs}
 
     while True:
         tok = task_q.get()
         if tok[0] == STOP:
             return
-        _, _gidx, model_seat, opp_seed = tok
-        if opp_fn is not None:
-            rng.seed(opp_seed)
+        _, _gidx, model_seat, opp_seed, opp_spec = tok
+        rng.seed(opp_seed)
+        opp_fixed = fixed_agents.get(opp_spec)  # None unless a locally-stepped opponent
+        # opp seat policy id when it is routed to central (self → current net):
+        opp_policy = CUR if opp_spec == "self" else opp_spec  # else "model:<id>"
         _drain_stale(resp_q)
         result = None
         obs = None
@@ -107,11 +137,12 @@ def worker_main(wid, opponent, deck, max_steps, task_q, req_q, resp_q):  # pragm
                         result = cur.result
                         break
                     seat = cur.yourIndex
-                    if opp_fn is not None and seat != model_seat:
-                        obs = battle_select(opp_fn(obs))
+                    if seat != model_seat and opp_fixed is not None:  # local fixed opponent
+                        obs = battle_select(opp_fixed(obs))
                         continue
+                    policy = CUR if seat == model_seat else opp_policy
                     enc = encode_observation(obs)
-                    req_q.put((DECIDE, wid, seat, enc))
+                    req_q.put((DECIDE, wid, seat, policy, enc))
                     action = resp_q.get()
                     obs = battle_select(action)
         except Exception:  # noqa: BLE001 — a crash forfeits this game, pool keeps going
