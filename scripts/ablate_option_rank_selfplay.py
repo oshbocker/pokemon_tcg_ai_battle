@@ -119,7 +119,11 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
             )
             m = ppo_update(model, opt, buf, ppo_cfg, device=args.device)
             ppo_cfg.ent_coef = adapt_ent_coef(
-                ppo_cfg.ent_coef, m["entropy"], args.target_entropy, gain=args.ent_gain
+                ppo_cfg.ent_coef,
+                m["entropy"],
+                args.target_entropy,
+                gain=args.ent_gain,
+                lo=args.ent_coef,
             )
 
             if it % args.sel_every == 0 or it == args.iters:
@@ -184,14 +188,16 @@ def main() -> int:
     ap.add_argument("--minibatch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--lr-decay", type=float, default=0.33, help="final LR = lr * this")
-    ap.add_argument("--ent-coef", type=float, default=0.01, help="initial entropy coef")
+    ap.add_argument(
+        "--ent-coef", type=float, default=0.02, help="initial entropy coef (controller floor)"
+    )
     ap.add_argument(
         "--target-entropy",
         type=float,
-        default=0.05,
+        default=0.1,
         help="adaptive-entropy setpoint (mean nats); auto-tunes ent_coef to hold exploration",
     )
-    ap.add_argument("--ent-gain", type=float, default=0.3, help="adaptive-entropy controller gain")
+    ap.add_argument("--ent-gain", type=float, default=0.4, help="adaptive-entropy controller gain")
     ap.add_argument("--target-kl", type=float, default=1.5, help="per-minibatch KL circuit breaker")
     ap.add_argument(
         "--sel-every", type=int, default=5, help="iters between checkpoint-selection evals"

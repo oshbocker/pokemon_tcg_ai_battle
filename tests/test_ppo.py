@@ -141,6 +141,8 @@ def test_adapt_ent_coef_controller():
     # clamps
     assert adapt_ent_coef(0.19, 0.0, target, hi=0.2) <= 0.2
     assert adapt_ent_coef(1.1e-3, 0.5, target, lo=1e-3) >= 1e-3
+    # ratchet: lo = initial coef → a high-entropy fresh policy can't cut the bonus below it
+    assert adapt_ent_coef(0.02, entropy=0.6, target_entropy=0.1, lo=0.02) == 0.02
     # disabled
     assert adapt_ent_coef(0.01, 0.0, target_entropy=0.0) == 0.01
 

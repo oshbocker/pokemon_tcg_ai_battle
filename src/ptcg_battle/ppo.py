@@ -262,22 +262,24 @@ def adapt_ent_coef(
     entropy: float,
     target_entropy: float,
     *,
-    gain: float = 0.3,
+    gain: float = 0.4,
     lo: float = 1e-3,
-    hi: float = 0.2,
+    hi: float = 0.3,
 ) -> float:
-    """Setpoint controller for the entropy coefficient (call once per iteration).
+    """Ratcheting setpoint controller for the entropy coefficient (call once/iter).
 
     Nudges `coef` **up** when the policy's mean entropy is below `target_entropy`
     (too deterministic) and **down** when above, as a bounded multiplicative step
-    in log-space, then clamps to `[lo, hi]`. `target_entropy <= 0` disables it
-    (returns `coef` unchanged).
+    in log-space, then clamps to `[lo, hi]`. `target_entropy <= 0` disables it.
 
-    Why: the fixed entropy *decay schedule* let entropy collapse to ~0.005 in
-    self-play, dropping the policy into a bad deterministic basin (a `small` run
-    converged *below* random). A controller holds exploration at a setpoint
-    instead of blindly decaying it — and `opt_rank` ON, which collapses entropy
-    fastest, is exactly the case that needs it.
+    **Pass `lo` = the initial coef so it can't cut the bonus below where it
+    started (a ratchet).** A fresh policy has *high* entropy, so a symmetric
+    controller spends the first few iters *lowering* `coef` — exactly when the
+    self-play collapse begins — and then can't catch up before entropy hits ~0,
+    where the entropy gradient vanishes and no coefficient can escape. Flooring at
+    the initial coef keeps the bonus live through the early high-entropy phase so
+    the controller is ramping *up* into the danger zone, not down. `opt_rank` ON,
+    which collapses entropy fastest, is the case that needs this.
     """
     if target_entropy <= 0:
         return coef
