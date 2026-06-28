@@ -123,3 +123,16 @@ real cause: the **per-epoch** KL early-stop was too coarse (one epoch drifted
 RECOMMENDATION here and set the default. The brittleness of ON is itself evidence
 to weigh: even if ON wins vs-random, if it needs the entropy floor to avoid
 collapse while OFF is stable without it, that is a mark against the crutch.
+
+### Training regime is now the LEAGUE, not pure self-play (P3.4)
+
+Pure self-play kept collapsing (entropy → 0, sub-random) even after the entropy
+controller + LR fixes — a degenerate mutual-best-response is too strong an
+attractor for the ON arm. So **both arms now train against a league** (per-game
+opponent from `{self, frozen past checkpoints, heuristic, random, the vendored
+Kaggle `romanrozen_v10` agent}`; `dist_collector.League`). This is a *better* test
+of the feature than pure self-play: the league stresses generalization (you must
+beat varied competent opponents, not just out-script a mirror), so a crutch that
+overfits the engine order should show up as worse honest-suite / H2H numbers, not
+as a training collapse that confounds the comparison. Both arms get the identical
+league + best-by-vs-random selection, so the comparison stays fair.

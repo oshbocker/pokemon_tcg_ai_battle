@@ -210,10 +210,20 @@ PPO with the winner's stabilizers (Lesson 7).
       checkpoint on **> `--gate-threshold`** (default 55%). This is the anti-collapse
       net — `best.pt` only ever advances. (value-CE/KL-to-frozen terms: deferred;
       KL early-stop already covers the collapse we saw.) **The A/B's prerequisite.**
-- [ ] **P3.4 League / past-checkpoint pool** (the winner's #1 regret — do it
-      early). Sample opponents from {current self, last-best, a few past
-      checkpoints, the heuristic bot}. Guards against non-transitive
-      self-overfitting (Lesson 7).
+- [x] **P3.4 League / past-checkpoint pool** (the winner's #1 regret — done early
+      because pure self-play **kept collapsing**: recipe-v2 + the entropy controller
+      still let a `small` seed drop to entropy 0 / sub-random, a degenerate
+      mutual-best-response). `dist_collector.League`: each game samples an opponent
+      from `{self, a bounded pool of frozen past checkpoints, heuristic, random, +
+      a vendored Kaggle agent}`. The central loop batches inference per policy and
+      trains **only** the current net's decisions; past checkpoints run on the GPU
+      but contribute no gradient. `train_selfplay --league` (+ `--w-*` weights,
+      `--pool-size`, `--snapshot-every`); the **ablation always trains both arms vs
+      the league**. Diverse competent opposition is what breaks the collapse and
+      guards non-transitive self-overfitting (Lesson 7). **Kaggle pool addition:**
+      `agent/kaggle_agents/romanrozen_v10.py` — community "STRONG START V10" (LB
+      950+), our Crustle-Lucario archetype, torch-free; add via `--league-kaggle
+      romanrozen_v10`.
 - [ ] **P3.5 (Optional) brief BC warm-start** from the heuristic agent purely to
       skip the random-flailing phase — then RL past it. Skip if P2.5 self-play
       already bootstraps fine.
