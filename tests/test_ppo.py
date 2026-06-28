@@ -77,12 +77,14 @@ def test_collect_rollout_smoke():
 
 def test_collect_selfplay_trains_both_seats():
     """Self-play collects from both seats, so it yields more decisions than a
-    one-seat fixed-opponent rollout over the same games."""
+    one-seat fixed-opponent rollout over the same games. Use enough games that the
+    ~2× both-seats effect dominates per-game length variance (the engine is
+    unseedable, so a 2-game comparison is flaky)."""
     torch.manual_seed(0)
     model = PtcgNet(TINY)
     deck = load_deck()
-    self_buf = collect_rollout(model, deck, n_games=2, opponent="self", seed=2)
-    one_buf = collect_rollout(model, deck, n_games=2, opponent="random", seed=2)
+    self_buf = collect_rollout(model, deck, n_games=8, opponent="self", seed=2)
+    one_buf = collect_rollout(model, deck, n_games=8, opponent="random", seed=2)
     assert len(self_buf) > len(one_buf)
 
 
