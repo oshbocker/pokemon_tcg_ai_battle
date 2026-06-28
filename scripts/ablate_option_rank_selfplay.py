@@ -8,9 +8,11 @@ a non-transitivity artifact, not a feature verdict (see
 `rl_research/ABLATION_OPTION_RANK.md`). This script runs the deferred settle:
 
   * train both arms (`use_option_rank` ON / OFF) under the **stabilized Phase-3
-    recipe** — distributed self-play collection (`DistributedCollector`), KL
-    early-stop, LR/entropy decay, best-checkpoint gating vs a frozen last-best — so
-    neither arm collapses and the comparison isn't confounded by the P2.5 wobble;
+    recipe** — distributed self-play collection (`DistributedCollector`), adaptive
+    entropy + a KL circuit breaker (recipe v2) so neither arm collapses, and
+    **best-checkpoint selection by vs-random applied identically to both arms** (a
+    single consistent rule — the old gate-vs-frozen-best biased the A/B toward the
+    faster-converging ON arm);
   * judge the saved best checkpoints the way we judge everything: **high-n,
     side-swapped, Wilson-CI** eval through `scripts/eval.py`'s harness, on the honest
     suite (`random`, `first`/B1, `heuristic`) **plus a model-vs-model head-to-head**
@@ -23,7 +25,7 @@ and the numbers to paste into `ABLATION_OPTION_RANK.md`.
 
     # On the L4 (Colab). Multi-hour for `small`; see notebooks/colab_selfplay.ipynb.
     uv run --extra rl python scripts/ablate_option_rank_selfplay.py \
-        --size small --workers 12 --seeds 2 --iters 80 --games-per-iter 128 \
+        --size small --workers 32 --seeds 2 --iters 80 --games-per-iter 128 \
         --eval-n 2000 --out outputs/ablation_sp
 
 This is the throughput-hungry one: collection is the distributed pool; only run the
@@ -54,7 +56,6 @@ from ptcg_battle.ppo import (  # noqa: E402
     PPOConfig,
     adapt_ent_coef,
     load_deck,
-    play_match,
     ppo_update,
     quick_eval,
     set_seed,
@@ -71,9 +72,15 @@ def _lerp(a: float, b: float, frac: float) -> float:
 def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path) -> Path:
     """Train one arm via stabilized distributed self-play; save + return its best ckpt.
 
-    Best = the last checkpoint that beat the frozen last-best by `--gate-threshold`
-    (the same gating the training script uses). If nothing ever promotes, the final
-    weights are saved so the arm is still evaluable."""
+    **Checkpoint selection is by best periodic greedy win-rate vs `random`**, applied
+    IDENTICALLY to both arms. The earlier gate-vs-frozen-best rule was confounded:
+    the fast-learning ON arm cleared the promotion threshold and saved a strong
+    checkpoint while the slower OFF arm never did and fell back to (often collapsed)
+    final weights — biasing the A/B toward ON. A single consistent selector removes
+    that, and best-by-vs-random also directly guards against the "fell below random"
+    collapse (the saved file is the best seen, not the final). vs-random is mildly
+    on-distribution for the crutch, but both arms are judged the same way and the
+    real verdict is the full honest suite + H2H."""
     set_seed(seed)
     cfg = replace(SIZE_BANDS[args.size], use_option_rank=use_rank)
     model = PtcgNet(cfg).to(args.device)
@@ -86,18 +93,18 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
         target_kl=args.target_kl,
     )
     lr_final = args.lr * args.lr_decay
+    best_vsrand = -1.0
 
-    frozen_best = copy.deepcopy(model).eval()
-    best_state = copy.deepcopy(model.state_dict())
-    promoted = False
+    def _save(state, vsrand, it):
+        torch.save(
+            {"model": state, "cfg": cfg.__dict__, "sel_vsrand": vsrand, "iter": it}, ckpt_path
+        )
 
-    def _save(state, gate_wr, it):
-        torch.save({"model": state, "cfg": cfg.__dict__, "gate_wr": gate_wr, "iter": it}, ckpt_path)
-
+    _save(model.state_dict(), float("nan"), 0)  # fallback so the file always exists
     tag = "ON " if use_rank else "OFF"
     print(
         f"  [{tag} seed={seed}] {total / 1e6:.1f}M (non-emb {nonemb / 1e6:.1f}M)  "
-        f"self-play  W={args.workers}  iters={args.iters}",
+        f"self-play  W={args.workers}  iters={args.iters}  select=best-vs-random",
         flush=True,
     )
     collector = DistributedCollector(deck, n_workers=args.workers, opponent="self")
@@ -115,30 +122,25 @@ def train_arm(use_rank: bool, deck: list[int], args, seed: int, ckpt_path: Path)
                 ppo_cfg.ent_coef, m["entropy"], args.target_entropy, gain=args.ent_gain
             )
 
-            if it % args.gate_every == 0 or it == args.iters:
-                r = play_match(
-                    model, frozen_best, deck, args.gate_games, device=args.device, seed=7
-                )
-                if r["winrate"] == r["winrate"] and r["winrate"] > args.gate_threshold:
-                    frozen_best = copy.deepcopy(model).eval()
-                    best_state = copy.deepcopy(model.state_dict())
-                    promoted = True
-                    _save(best_state, r["winrate"], it)
+            if it % args.sel_every == 0 or it == args.iters:
+                wr = quick_eval(model, deck, "random", args.sel_n, device=args.device, seed=7)[
+                    "winrate"
+                ]
+                promoted = wr == wr and wr > best_vsrand  # not NaN and a new best
+                if promoted:
+                    best_vsrand = wr
+                    _save(copy.deepcopy(model.state_dict()), wr, it)
                 if args.verbose:
-                    sr = quick_eval(model, deck, "random", 60, device=args.device, seed=7)
                     stop = "*" if m.get("stopped_kl") else ""
                     print(
                         f"    it {it:>3} N={len(buf):>5} kl={m['approx_kl']:+.3f}{stop} "
                         f"upd={int(m.get('updates', 0))} ent={m['entropy']:.3f} "
-                        f"entc={ppo_cfg.ent_coef:.4f} gate={r['winrate'] * 100:.0f}% "
-                        f"vsRand={sr['winrate'] * 100:.0f}%",
+                        f"entc={ppo_cfg.ent_coef:.4f} vsRand={wr * 100:.0f}%"
+                        f"{' [best]' if promoted else ''}",
                         flush=True,
                     )
     finally:
         collector.close()
-
-    if not promoted:  # never beat the frozen start — keep the final weights anyway
-        _save(model.state_dict(), float("nan"), args.iters)
     return ckpt_path
 
 
@@ -191,9 +193,15 @@ def main() -> int:
     )
     ap.add_argument("--ent-gain", type=float, default=0.3, help="adaptive-entropy controller gain")
     ap.add_argument("--target-kl", type=float, default=1.5, help="per-minibatch KL circuit breaker")
-    ap.add_argument("--gate-every", type=int, default=5)
-    ap.add_argument("--gate-games", type=int, default=200)
-    ap.add_argument("--gate-threshold", type=float, default=0.55)
+    ap.add_argument(
+        "--sel-every", type=int, default=5, help="iters between checkpoint-selection evals"
+    )
+    ap.add_argument(
+        "--sel-n",
+        type=int,
+        default=200,
+        help="greedy vs-random games per selection eval (consistent best-checkpoint rule)",
+    )
     ap.add_argument(
         "--eval-n", type=int, default=2000, help="games/arm/opponent (pooled over seeds)"
     )
