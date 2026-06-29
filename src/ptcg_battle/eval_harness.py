@@ -212,6 +212,8 @@ def _build_agent(
     if spec.startswith("model:"):
         return _build_model_agent(spec, deck_path=deck_path)
     if spec.startswith("kaggle:"):
+        from .opponents import resolve_deck  # single deck resolver (torch-free)
+
         name = spec[len("kaggle:") :]
         s = importlib.util.spec_from_file_location(
             f"eval_{slot}_{name}", KAGGLE_AGENT_DIR / f"{name}.py"
@@ -219,7 +221,10 @@ def _build_agent(
         assert s is not None and s.loader is not None
         mod = importlib.util.module_from_spec(s)
         s.loader.exec_module(mod)
-        return mod.agent, mod.my_deck  # the borrowed agent pilots its own deck
+        # Seat the deck the league trains against: the sibling <name>_deck.csv via the
+        # shared resolver, so eval and training pilot the SAME deck for this opponent
+        # (fall back to the agent's own my_deck only if no sibling deck exists).
+        return mod.agent, (resolve_deck(spec, None) or mod.my_deck)
     raise ValueError(f"unknown agent spec: {spec!r}")
 
 

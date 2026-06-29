@@ -130,6 +130,11 @@ def build_league(
         mix.append((f"kaggle:{kaggle}", w_kaggle))
     if extra:
         mix.extend((spec, w) for spec, w in extra if w > 0)
+    # Guard a degenerate all-zero distribution (e.g. --w-self 0 with an empty pool and
+    # every other weight 0): the per-game sampler needs a positive total, so fall back
+    # to pure self-play rather than crash collect() with a cryptic ValueError.
+    if sum(w for _, w in mix) <= 0:
+        mix = [("self", 1.0)]
     return League(mix=mix, models=pool, decks=dict(opp_decks or {}))
 
 

@@ -141,19 +141,22 @@ def _update_opp_attack_tracking(obs):
 # ── Board helpers ──
 
 def read_deck_csv():
-    # Read THIS agent's own deck relative to this file (workers chdir to agent/,
-    # so a bare "deck.csv" would wrongly load the trainee's deck). Fall back to the
-    # Kaggle runtime location only if the sibling file is missing.
+    # Read THIS agent's own deck relative to this file (workers chdir to agent/, so a
+    # bare "deck.csv" would wrongly load the trainee's deck — the collision we must
+    # avoid). The sibling is the only trusted source; the Kaggle runtime path is a
+    # pure fallback. A deck that isn't exactly 60 cards is rejected (a truncated/cwd
+    # file would silently field the wrong deck), so callers can rely on a legal deck.
     here = os.path.dirname(os.path.abspath(__file__))
     for fp in (
         os.path.join(here, "archaludon_deck.csv"),
-        "deck.csv",
         "/kaggle_simulations/agent/deck.csv",
     ):
         if os.path.exists(fp):
             with open(fp) as f:
-                return [int(x) for x in f.read().split() if x.strip()]
-    raise FileNotFoundError("archaludon_deck.csv")
+                ids = [int(x) for x in f.read().split() if x.strip()]
+            if len(ids) == 60:
+                return ids
+    raise FileNotFoundError("archaludon_deck.csv (a legal 60-card sibling deck)")
 
 
 # This agent's own deck (the contract the league/eval rely on: a `my_deck` global).
@@ -1105,19 +1108,24 @@ def choose_options(obs):
 
 
 def agent(obs_dict):
-    obs = to_observation_class(obs_dict)
+    # Never crash / forfeit: the parse + deck-selection path is guarded too, and the
+    # deck is the cached `my_deck` (read once at import), not a per-call file read.
+    try:
+        obs = to_observation_class(obs_dict)
+    except Exception:
+        return my_deck if obs_dict.get("select") is None else [0]
     if obs.select is None:
         global _opp_last_attack_id, _cur_turn_logs
         _opp_last_attack_id = None
         _cur_turn_logs.clear()
-        return read_deck_csv()
+        return my_deck
     _update_opp_attack_tracking(obs)
     if not obs.select.option:
         return []
     try:
         return choose_options(obs)
     except Exception:
-        # Never crash / forfeit: return a structurally-legal selection.
+        # Structurally-legal fallback.
         n = len(obs.select.option)
         k = min(max(obs.select.minCount, 1), n)
         return list(range(k))
