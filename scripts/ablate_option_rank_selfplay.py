@@ -283,10 +283,12 @@ def main() -> int:
     print("\n=== high-n honest eval (pooled over seeds, side-swapped, Wilson 95%) ===", flush=True)
     suite_totals: dict[bool, dict[str, tuple[int, int]]] = {True: {}, False: {}}
     for use_rank in (True, False):
+        arm = "ON " if use_rank else "OFF"
         for opp in HONEST_SUITE:
             sums = []
             for i, ckpt in enumerate(ckpts[use_rank]):
                 csv = args.out / f"eval_{'on' if use_rank else 'off'}_s{i}_{opp}.csv"
+                print(f"  [{arm}] vs {opp:>9} seed={i} ...", flush=True)
                 s = evaluate(
                     champion=f"model:{ckpt}",
                     opponents=[opp],
@@ -297,6 +299,9 @@ def main() -> int:
                 sums.append(s)
             w, ln, _d, _e = _pool(sums)
             suite_totals[use_rank][opp] = (w, ln)
+            # Print each cell as it lands — a stall is visible immediately and
+            # partial results are captured, rather than only printing at the end.
+            print(f"  [{arm}] vs {opp:>9}: {_fmt(w, ln)}", flush=True)
 
     hdr = f"{'arm':>9}  " + "  ".join(f"{o:>22}" for o in HONEST_SUITE)
     print(hdr)
@@ -310,6 +315,7 @@ def main() -> int:
     h_w = h_l = h_d = 0
     for i, (on_ckpt, off_ckpt) in enumerate(zip(ckpts[True], ckpts[False], strict=True)):
         csv = args.out / f"h2h_s{i}.csv"
+        print(f"  [H2H] ON vs OFF seed={i} ...", flush=True)
         s = evaluate(
             champion=f"model:{on_ckpt}",
             opponents=[f"model:{off_ckpt}"],
@@ -320,6 +326,7 @@ def main() -> int:
         h_w += s.wins
         h_l += s.losses
         h_d += s.draws
+        print(f"  [H2H] seed={i}: ON {_fmt(s.wins, s.losses)} vs OFF (draws={s.draws})", flush=True)
     print(f"  ON {_fmt(h_w, h_l)}  vs OFF   (draws={h_d})")
 
     # --- verdict ---

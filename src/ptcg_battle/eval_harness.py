@@ -360,6 +360,30 @@ def _summarise(rows: list[dict], opponent: str) -> MatchupSummary:
     return s
 
 
+def _init_eval_worker() -> None:
+    """Pool initializer — pin each worker to a single thread.
+
+    The honest eval runs `cpu_count-1` worker processes, each doing **batch-1 CPU
+    inference** for `model:<path>` agents. Without this, every worker's torch/BLAS
+    pool sizes itself to the whole machine (~one thread per core), so the workers
+    oversubscribe the box by ~`cpu_count`× and grind to a near-stall — the cause of
+    the option-rank A/B honest-eval "hang" (it crept across two days via the
+    resumable CSV and never finished a session). Set the env vars (BLAS/OpenMP read
+    them at import; a fresh spawn worker hasn't imported numpy yet) **and** torch's
+    runtime thread count (guarded — engine-only matchups never import torch)."""
+    for var in (
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    ):
+        os.environ[var] = "1"
+    with contextlib.suppress(ImportError):
+        import torch  # noqa: PLC0415 — lazy: keep torch out of the engine-only path
+
+        torch.set_num_threads(1)
+
+
 def evaluate(
     champion: str,
     opponents: list[str],
@@ -369,12 +393,19 @@ def evaluate(
     max_steps: int = 4000,
     chunk: int = 25,
     base_seed: int = 1000,
+    chunk_timeout: float = 1200.0,
 ) -> dict[str, MatchupSummary]:
     """Run (or resume) `games` side-swapped games of `champion` vs each opponent.
 
     `games` is the *total* per opponent, split 50/50 across the two seats. Resumes
     from whatever is already in `out_csv`, dispatching only the shortfall. Returns
     the per-opponent summary keyed by opponent name.
+
+    Workers are single-threaded (`_init_eval_worker`) so the many CPU-inference
+    processes don't oversubscribe the machine. `chunk_timeout` (s) bounds the wait
+    on any one chunk: if a worker wedges — e.g. the native engine looping on a
+    degenerate board, which `max_steps` (a Python guard) can't interrupt — the
+    matchup is left partial (resumable) instead of hanging the whole run forever.
     """
     workers = workers or max(1, (os.cpu_count() or 2) - 1)
     ctx = mp.get_context("spawn")
@@ -394,8 +425,20 @@ def evaluate(
                 tasks.append((champion, opp, this, seat, seed + seat * 1000 + c, max_steps))
         if not tasks:
             continue
-        with ctx.Pool(workers) as pool:
-            for res in pool.imap_unordered(_worker_chunk, tasks):
+        with ctx.Pool(workers, initializer=_init_eval_worker) as pool:
+            pending = [pool.apply_async(_worker_chunk, (t,)) for t in tasks]
+            for done_chunks, ar in enumerate(pending):
+                try:
+                    res = ar.get(timeout=chunk_timeout)
+                except mp.TimeoutError:
+                    pool.terminate()
+                    print(
+                        f"  [eval] WEDGED: chunk for {champion} vs {opp} exceeded "
+                        f"{chunk_timeout:.0f}s; abandoning matchup at {done_chunks}/"
+                        f"{len(tasks)} chunks (partial CSV is resumable).",
+                        flush=True,
+                    )
+                    break
                 _append_csv(out_csv, [res])
 
     final = _read_csv_progress(out_csv)
