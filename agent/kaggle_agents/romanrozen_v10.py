@@ -43,11 +43,19 @@ SEARCH_MAX_CANDIDATES = 6    # how many first-actions to roll out
 # ============================================================================
 # DECK
 # ============================================================================
-file_path = "deck.csv"
-if not os.path.exists(file_path):
-    file_path = "/kaggle_simulations/agent/" + file_path
+# Read THIS agent's own deck relative to this file (workers chdir to agent/, so a
+# bare "deck.csv" would wrongly load the trainee's deck — and two borrowed agents
+# reading the cwd deck.csv would collide). Fall back to the Kaggle runtime path.
+_here = os.path.dirname(os.path.abspath(__file__))
+for file_path in (
+    os.path.join(_here, "romanrozen_v10_deck.csv"),
+    "deck.csv",
+    "/kaggle_simulations/agent/deck.csv",
+):
+    if os.path.exists(file_path):
+        break
 with open(file_path, "r") as f:
-    _csv = f.read().split("\n")
+    _csv = [ln for ln in f.read().split("\n") if ln.strip()]
 my_deck = [int(_csv[i]) for i in range(60)]
 
 all_card = all_card_data()

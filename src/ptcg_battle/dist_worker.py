@@ -91,8 +91,14 @@ def _drain_stale(resp_q) -> None:
             return
 
 
-def worker_main(wid, fixed_specs, deck, max_steps, task_q, req_q, resp_q):  # pragma: no cover
+def worker_main(wid, fixed_specs, deck_self, max_steps, task_q, req_q, resp_q):  # pragma: no cover
     """Run forever: pull a game token, play it (per-game opponent), repeat.
+
+    `deck_self` is the **trainee** deck (the deck the current/past policies pilot);
+    it always seats the model. The opponent's deck arrives per game in the PLAY
+    token (`opp_deck`): for ``self``/``model:`` opponents it is ``None`` (they pilot
+    `deck_self` too — true self/past mirror); for a fixed/Kaggle opponent it is THAT
+    agent's own deck, so the match is asymmetric (`battle_start(deck_self, opp_deck)`).
 
     `fixed_specs` is the set of locally-stepped opponent specs this worker may be
     asked to play (built once at startup); `"self"` / `"model:<id>"` opponents are
@@ -111,22 +117,27 @@ def worker_main(wid, fixed_specs, deck, max_steps, task_q, req_q, resp_q):  # pr
     from .encoding import encode_observation
 
     rng = random.Random(7919 + wid)
-    fixed_agents = {s: _make_fixed_agent(s, deck, rng, to_oc) for s in fixed_specs}
+    fixed_agents = {s: _make_fixed_agent(s, deck_self, rng, to_oc) for s in fixed_specs}
 
     while True:
         tok = task_q.get()
         if tok[0] == STOP:
             return
-        _, _gidx, model_seat, opp_seed, opp_spec = tok
+        _, _gidx, model_seat, opp_seed, opp_spec, opp_deck = tok
         rng.seed(opp_seed)
         opp_fixed = fixed_agents.get(opp_spec)  # None unless a locally-stepped opponent
         # opp seat policy id when it is routed to central (self → current net):
         opp_policy = CUR if opp_spec == "self" else opp_spec  # else "model:<id>"
+        # Seat the decks: trainee at model_seat, opponent (its own deck, or the
+        # trainee deck for self/past mirrors) at the other seat. The deck can't react
+        # to play order, so the model_seat side-swap is what cancels first-player bias.
+        seat_decks = [deck_self, deck_self]
+        seat_decks[1 - model_seat] = opp_deck if opp_deck is not None else deck_self
         _drain_stale(resp_q)
         result = None
         obs = None
         try:
-            obs, _ = battle_start(deck, deck)
+            obs, _ = battle_start(seat_decks[0], seat_decks[1])
             if obs is not None:
                 for _ in range(max_steps):
                     oc = to_oc(obs)

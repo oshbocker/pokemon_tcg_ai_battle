@@ -1,0 +1,26 @@
+train  size=small(5.7M, non-emb 5.0M)  option_rank=True  opponent=self  deck=dragapult.csv  device=cpu
+       iters=20 games/iter=32 epochs=3 mb=256 lr=0.0003->0.0001 ent~target=0.15(adaptive) kl_cut=1.5 gamma=0.997
+       collector=dist(W=6)  league: self=1.0 past=2.0(≤5) + manifest[kaggle:archaludon=1.5, kaggle:dragapult=1.5, kaggle:romanrozen_v10=1, heuristic=0.5, random=0.3]
+
+it   1  N= 3134  pg=+0.207 vf=0.267 ent=0.255 entc=0.0200 kl=+1.831* clip=0.43 upd=5 lr=3.0e-04 pool=0  32.9s
+it   2  N= 2626  pg=+0.071 vf=0.106 ent=0.092 entc=0.0233 kl=+0.797* clip=0.20 upd=24 lr=2.9e-04 pool=0  80.3s
+it   3  N= 3142  pg=+0.025 vf=0.067 ent=0.047 entc=0.0307 kl=+0.702* clip=0.14 upd=27 lr=2.8e-04 pool=0  96.5s
+it   4  N= 2086  pg=+0.011 vf=0.050 ent=0.051 entc=0.0399 kl=+0.810* clip=0.13 upd=25 lr=2.7e-04 pool=1  96.7s
+it   5  N= 2963  pg=+0.028 vf=0.051 ent=0.068 entc=0.0497 kl=+0.623* clip=0.14 upd=15 lr=2.6e-04 pool=1  100.2s  | eval: random 70.0%(n=40)  [saved best=77.5%]
+it   6  N= 3164  pg=+0.047 vf=0.040 ent=0.059 entc=0.0633 kl=+0.840* clip=0.15 upd=27 lr=2.5e-04 pool=1  197.6s
+it   7  N= 2815  pg=+0.013 vf=0.038 ent=0.036 entc=0.0860 kl=+0.225 clip=0.07 upd=33 lr=2.4e-04 pool=1  265.9s
+it   8  N= 2043  pg=+0.007 vf=0.035 ent=0.051 entc=0.1120 kl=+0.235 clip=0.08 upd=24 lr=2.3e-04 pool=2  208.4s
+it   9  N= 2180  pg=-0.004 vf=0.046 ent=0.062 entc=0.1418 kl=+0.115 clip=0.08 upd=27 lr=2.2e-04 pool=2  189.5s
+it  10  N= 2003  pg=+0.003 vf=0.050 ent=0.125 entc=0.1516 kl=+0.455 clip=0.17 upd=24 lr=2.1e-04 pool=2  160.0s  | eval: random 80.0%(n=40)
+it  11  N= 2201  pg=+0.011 vf=0.032 ent=0.290 entc=0.1043 kl=+0.563 clip=0.31 upd=27 lr=1.9e-04 pool=2  192.5s
+it  12  N= 2332  pg=+0.021 vf=0.048 ent=0.297 entc=0.0705 kl=+0.578 clip=0.32 upd=30 lr=1.8e-04 pool=3  183.5s
+it  13  N= 2104  pg=+0.018 vf=0.049 ent=0.380 entc=0.0473 kl=+0.336 clip=0.28 upd=27 lr=1.7e-04 pool=3  133.4s
+it  14  N= 2978  pg=+0.025 vf=0.058 ent=0.432 entc=0.0317 kl=+0.419 clip=0.34 upd=36 lr=1.6e-04 pool=3  183.1s
+it  15  N= 2044  pg=+0.007 vf=0.039 ent=0.373 entc=0.0212 kl=+0.182 clip=0.27 upd=24 lr=1.5e-04 pool=3  126.5s  | eval: random 77.5%(n=40)
+it  16  N= 2355  pg=+0.002 vf=0.050 ent=0.324 entc=0.0200 kl=+0.149 clip=0.23 upd=30 lr=1.4e-04 pool=4  183.5s
+it  17  N= 3069  pg=+0.010 vf=0.048 ent=0.352 entc=0.0200 kl=+0.160 clip=0.24 upd=36 lr=1.3e-04 pool=4  228.7s
+it  18  N= 2736  pg=-0.000 vf=0.039 ent=0.299 entc=0.0200 kl=+0.106 clip=0.19 upd=33 lr=1.2e-04 pool=4  194.7s
+it  19  N= 2737  pg=+0.005 vf=0.064 ent=0.315 entc=0.0200 kl=+0.096 clip=0.18 upd=33 lr=1.1e-04 pool=4  198.2s
+it  20  N= 2122  pg=-0.009 vf=0.027 ent=0.380 entc=0.0200 kl=+0.126 clip=0.20 upd=27 lr=1.0e-04 pool=5  139.5s  | eval: random 77.5%(n=40)
+
+done. best in-loop vs random = 77.5%  ->  outputs/checkpoints/intermediate_dragapult

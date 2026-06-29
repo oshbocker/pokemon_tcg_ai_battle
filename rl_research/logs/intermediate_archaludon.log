@@ -1,0 +1,26 @@
+train  size=small(5.7M, non-emb 5.0M)  option_rank=True  opponent=self  deck=archaludon.csv  device=cpu
+       iters=20 games/iter=32 epochs=3 mb=256 lr=0.0003->0.0001 ent~target=0.15(adaptive) kl_cut=1.5 gamma=0.997
+       collector=dist(W=6)  league: self=1.0 past=2.0(≤5) + manifest[kaggle:archaludon=1.5, kaggle:dragapult=1.5, kaggle:romanrozen_v10=1, heuristic=0.5, random=0.3]
+
+it   1  N= 2532  pg=+0.180 vf=0.397 ent=0.380 entc=0.0200 kl=+1.597* clip=0.43 upd=3 lr=3.0e-04 pool=0  17.5s
+it   2  N= 1543  pg=+0.120 vf=0.112 ent=0.151 entc=0.0200 kl=+1.083* clip=0.30 upd=14 lr=2.9e-04 pool=0  25.0s
+it   3  N= 1955  pg=+0.030 vf=0.065 ent=0.095 entc=0.0232 kl=+0.476 clip=0.19 upd=24 lr=2.8e-04 pool=0  62.6s
+it   4  N= 1454  pg=+0.009 vf=0.057 ent=0.070 entc=0.0286 kl=+0.554 clip=0.15 upd=18 lr=2.7e-04 pool=1  51.2s
+it   5  N= 1528  pg=+0.005 vf=0.072 ent=0.054 entc=0.0370 kl=+0.117 clip=0.08 upd=18 lr=2.6e-04 pool=1  66.7s  | eval: random 90.0%(n=40)  [saved best=92.5%]
+it   6  N= 1531  pg=+0.010 vf=0.077 ent=0.049 entc=0.0484 kl=+0.307 clip=0.09 upd=18 lr=2.5e-04 pool=1  63.9s
+it   7  N= 1443  pg=+0.003 vf=0.086 ent=0.048 entc=0.0635 kl=+0.202 clip=0.07 upd=18 lr=2.4e-04 pool=1  75.5s
+it   8  N= 1291  pg=+0.004 vf=0.056 ent=0.046 entc=0.0839 kl=+0.256 clip=0.08 upd=18 lr=2.3e-04 pool=2  65.4s
+it   9  N= 1271  pg=+0.014 vf=0.065 ent=0.052 entc=0.1088 kl=+0.233 clip=0.09 upd=15 lr=2.2e-04 pool=2  56.8s
+it  10  N= 1065  pg=+0.004 vf=0.052 ent=0.064 entc=0.1368 kl=+0.219 clip=0.10 upd=15 lr=2.1e-04 pool=2  40.9s  | eval: random 90.0%(n=40)
+it  11  N= 1184  pg=+0.009 vf=0.068 ent=0.091 entc=0.1603 kl=+0.108 clip=0.09 upd=15 lr=1.9e-04 pool=2  44.1s
+it  12  N= 1301  pg=-0.002 vf=0.088 ent=0.116 entc=0.1754 kl=+0.174 clip=0.13 upd=18 lr=1.8e-04 pool=3  54.1s
+it  13  N= 1277  pg=+0.005 vf=0.083 ent=0.129 entc=0.1857 kl=+0.149 clip=0.13 upd=15 lr=1.7e-04 pool=3  53.3s
+it  14  N= 1842  pg=+0.025 vf=0.065 ent=0.195 entc=0.1647 kl=+0.245 clip=0.21 upd=24 lr=1.6e-04 pool=3  86.3s
+it  15  N= 1519  pg=+0.014 vf=0.066 ent=0.297 entc=0.1114 kl=+0.204 clip=0.26 upd=18 lr=1.5e-04 pool=3  55.5s  | eval: random 90.0%(n=40)
+it  16  N= 1686  pg=+0.016 vf=0.046 ent=0.345 entc=0.0746 kl=+0.240 clip=0.27 upd=21 lr=1.4e-04 pool=4  77.6s
+it  17  N= 1602  pg=+0.027 vf=0.095 ent=0.366 entc=0.0500 kl=+0.160 clip=0.26 upd=21 lr=1.3e-04 pool=4  65.7s
+it  18  N= 1938  pg=+0.019 vf=0.051 ent=0.436 entc=0.0335 kl=+0.164 clip=0.30 upd=24 lr=1.2e-04 pool=4  85.0s
+it  19  N= 1838  pg=+0.026 vf=0.051 ent=0.451 entc=0.0225 kl=+0.121 clip=0.26 upd=24 lr=1.1e-04 pool=4  73.0s
+it  20  N= 1366  pg=+0.011 vf=0.039 ent=0.425 entc=0.0200 kl=+0.135 clip=0.27 upd=18 lr=1.0e-04 pool=5  53.7s  | eval: random 72.5%(n=40)
+
+done. best in-loop vs random = 92.5%  ->  outputs/checkpoints/intermediate_archaludon

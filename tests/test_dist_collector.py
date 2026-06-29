@@ -137,3 +137,27 @@ def test_dist_collector_fixed_opponent_one_seat():
     with DistributedCollector(deck, n_workers=2, fixed_specs=["first"]) as col:
         buf = col.collect(model, n_games=4, league=league, device="cpu", seed=3)
     _assert_valid_buffer(buf)
+
+
+def test_dist_collector_asymmetric_decks():
+    """The asymmetric path: a trainee on deck A faces a Kaggle opponent piloting its
+    OWN deck B (battle_start(deckA, deckB)). The cross-archetype game must run and
+    buffer only the trainee's decisions — the deck-agnostic, pivot-ready core."""
+    from pathlib import Path
+
+    from ptcg_battle.dist_collector import League
+    from ptcg_battle.opponents import read_deck
+
+    repo = Path(__file__).resolve().parents[1]
+    trainee = read_deck(repo / "agent" / "decks" / "archaludon.csv")
+    opp_deck = read_deck(repo / "agent" / "kaggle_agents" / "dragapult_deck.csv")
+    assert trainee != opp_deck  # genuinely asymmetric
+    torch.manual_seed(0)
+    model = PtcgNet(TINY)
+    league = League(
+        mix=[("self", 1.0), ("kaggle:dragapult", 2.0)],
+        decks={"kaggle:dragapult": opp_deck},
+    )
+    with DistributedCollector(trainee, n_workers=2, fixed_specs=["kaggle:dragapult"]) as col:
+        buf = col.collect(model, n_games=6, league=league, device="cpu", seed=11)
+    _assert_valid_buffer(buf)

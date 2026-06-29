@@ -55,6 +55,12 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--size", default="small", choices=list(SIZE_BANDS))
+    ap.add_argument(
+        "--deck",
+        type=Path,
+        default=None,
+        help="trainee deck CSV (default: agent/deck.csv). e.g. agent/decks/archaludon.csv",
+    )
     ap.add_argument("--no-option-rank", action="store_true", help="ablate the engine-order feature")
     ap.add_argument(
         "--opponent", default="random", choices=["self", "random", "first", "heuristic"]
@@ -102,6 +108,12 @@ def main() -> int:
     ap.add_argument("--league-kaggle", default=None, help="kaggle_agents/<name> to add to the pool")
     ap.add_argument("--w-kaggle", type=float, default=1.0)
     ap.add_argument(
+        "--opp-manifest",
+        default="agent/opponents/mixed_pool.json",
+        help="JSON opponent pool (agent+deck+weight); drives all fixed/Kaggle opponents. "
+        "Empty string disables (fall back to the --w-heuristic/--w-random/--league-kaggle flags).",
+    )
+    ap.add_argument(
         "--gate", action="store_true", help="promote best.pt by gating vs frozen last-best"
     )
     ap.add_argument("--gate-every", type=int, default=5)
@@ -124,7 +136,7 @@ def main() -> int:
     ppo_cfg = PPOConfig(
         epochs=a.epochs, minibatch=a.minibatch, ent_coef=a.ent_coef, lr=a.lr, target_kl=a.target_kl
     )
-    deck = load_deck()
+    deck = load_deck(a.deck)
     eval_opps = [o.strip() for o in a.eval_opponents.split(",") if o.strip()]
     a.out.mkdir(parents=True, exist_ok=True)
     lr_final = a.lr if a.lr_final is None else a.lr_final
@@ -137,6 +149,22 @@ def main() -> int:
     pool: dict[str, PtcgNet] = {}  # frozen past checkpoints (id -> model)
     collector = None
     league = None
+
+    # Deck-agnostic opponent pool (DATA): the manifest drives every fixed/Kaggle
+    # opponent + its own deck, so adding/swapping an archetype is a config change.
+    # When a manifest is active it supersedes the per-flag heuristic/random/kaggle
+    # weights (self/past stay flag-driven). self/model opponents mirror the trainee.
+    manifest_extra: list[tuple[str, float]] = []
+    manifest_decks: dict[str, list[int]] = {}
+    if use_league and a.opp_manifest:
+        from ptcg_battle.opponents import load_manifest, manifest_to_league_args
+
+        manifest_extra, manifest_decks = manifest_to_league_args(load_manifest(a.opp_manifest))
+    manifest_on = bool(manifest_extra)
+    lw_heuristic = 0.0 if manifest_on else a.w_heuristic
+    lw_random = 0.0 if manifest_on else a.w_random
+    lkaggle = None if manifest_on else a.league_kaggle
+
     if a.collector == "dist":
         from ptcg_battle.dist_collector import (
             DistributedCollector,
@@ -147,10 +175,11 @@ def main() -> int:
 
         if use_league:
             fixed = league_fixed_specs(
-                w_heuristic=a.w_heuristic,
-                w_random=a.w_random,
-                kaggle=a.league_kaggle,
+                w_heuristic=lw_heuristic,
+                w_random=lw_random,
+                kaggle=lkaggle,
                 w_kaggle=a.w_kaggle,
+                extra=manifest_extra,
             )
         elif a.opponent != "self":  # single fixed-opponent training (legacy)
             fixed = [a.opponent] if a.opponent in ("random", "first", "heuristic") else []
@@ -164,9 +193,26 @@ def main() -> int:
     # P3.3: frozen last-best opponent for gated promotion (the anti-collapse net).
     frozen_best = copy.deepcopy(model).eval() if a.gate else None
 
+    deck_name = (a.deck or (REPO / "agent" / "deck.csv")).name
+    if use_league and manifest_on:
+        opp_desc = "  league: self={} past={}(≤{}) + manifest[{}]".format(
+            a.w_self,
+            a.w_past,
+            a.pool_size,
+            ", ".join(f"{s}={w:g}" for s, w in manifest_extra),
+        )
+    elif use_league:
+        opp_desc = (
+            f"  league: self={a.w_self} past={a.w_past}(≤{a.pool_size}) "
+            f"heur={a.w_heuristic} rand={a.w_random}"
+            + (f" kaggle:{a.league_kaggle}={a.w_kaggle}" if a.league_kaggle else "")
+        )
+    else:
+        opp_desc = ""
     print(
         f"train  size={a.size}({total / 1e6:.1f}M, non-emb {nonemb / 1e6:.1f}M)  "
-        f"option_rank={cfg.use_option_rank}  opponent={a.opponent}  device={a.device}\n"
+        f"option_rank={cfg.use_option_rank}  opponent={a.opponent}  deck={deck_name}  "
+        f"device={a.device}\n"
         f"       iters={a.iters} games/iter={a.games_per_iter} epochs={a.epochs} mb={a.minibatch} "
         f"lr={a.lr}->{lr_final} "
         + (
@@ -177,13 +223,7 @@ def main() -> int:
         + f" kl_cut={a.target_kl} gamma={a.gamma}\n"
         f"       collector={a.collector}"
         + (f"(W={a.workers})" if a.collector == "dist" else "")
-        + (
-            f"  league: self={a.w_self} past={a.w_past}(≤{a.pool_size}) "
-            f"heur={a.w_heuristic} rand={a.w_random}"
-            + (f" kaggle:{a.league_kaggle}={a.w_kaggle}" if a.league_kaggle else "")
-            if use_league
-            else ""
-        )
+        + opp_desc
         + (f"  gate>{a.gate_threshold:.0%}/{a.gate_games}g every {a.gate_every}" if a.gate else "")
         + "\n"
     )
@@ -202,10 +242,12 @@ def main() -> int:
                     pool,
                     w_self=a.w_self,
                     w_past=a.w_past,
-                    w_heuristic=a.w_heuristic,
-                    w_random=a.w_random,
-                    kaggle=a.league_kaggle,
+                    w_heuristic=lw_heuristic,
+                    w_random=lw_random,
+                    kaggle=lkaggle,
                     w_kaggle=a.w_kaggle,
+                    extra=manifest_extra,
+                    opp_decks=manifest_decks,
                 )
 
             t0 = time.time()

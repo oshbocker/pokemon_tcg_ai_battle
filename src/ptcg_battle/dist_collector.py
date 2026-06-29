@@ -49,10 +49,17 @@ from .ppo import TrajStep, build_buffer_from_trajectories
 @dataclass
 class League:
     """Opponent pool sampled per game. `mix` is `[(spec, weight), ...]` over
-    `"self"`, `"model:<id>"` (ids must key `models`), and fixed-agent specs."""
+    `"self"`, `"model:<id>"` (ids must key `models`), and fixed-agent specs.
+
+    `decks` maps a spec → the deck that opponent pilots (asymmetric self-play): a
+    Kaggle/fixed opponent plays ITS OWN archetype deck, while ``self``/``model:``
+    opponents are absent from `decks` and default to the trainee deck (a mirror).
+    Decks are data — the collector ships `decks.get(spec)` in the PLAY token, so
+    swapping an opponent's deck never touches the worker/collector code."""
 
     mix: list[tuple[str, float]] = field(default_factory=lambda: [("self", 1.0)])
     models: dict[str, PtcgNet] = field(default_factory=dict)  # frozen past checkpoints
+    decks: dict[str, list[int]] = field(default_factory=dict)  # spec -> opponent deck
 
     def fixed_specs(self) -> list[str]:
         """The locally-stepped (non-model) opponent specs this league can request."""
@@ -63,18 +70,30 @@ _SELF_PLAY = League()
 
 
 def league_fixed_specs(
-    *, w_heuristic: float, w_random: float, kaggle: str | None, w_kaggle: float
+    *,
+    w_heuristic: float,
+    w_random: float,
+    kaggle: str | None,
+    w_kaggle: float,
+    extra: list[tuple[str, float]] | None = None,
 ) -> list[str]:
     """The locally-stepped opponent specs a league config will request (stable across
-    iterations — pass to the collector constructor so workers prebuild these agents)."""
-    specs = []
+    iterations — pass to the collector constructor so workers prebuild these agents).
+
+    `extra` folds in the manifest opponents (`(spec, weight)`); only the locally-
+    stepped ones (`heuristic`/`random`/`first`/`kaggle:*`, weight > 0) are returned —
+    `self`/`model:` opponents run on the central GPU, not in the worker."""
+    specs: list[str] = []
     if w_heuristic > 0:
         specs.append("heuristic")
     if w_random > 0:
         specs.append("random")
     if kaggle and w_kaggle > 0:
         specs.append(f"kaggle:{kaggle}")
-    return specs
+    for spec, w in extra or []:
+        if w > 0 and spec != "self" and not spec.startswith("model:"):
+            specs.append(spec)
+    return list(dict.fromkeys(specs))  # dedupe, preserve order
 
 
 def build_league(
@@ -86,12 +105,19 @@ def build_league(
     w_random: float = 0.5,
     kaggle: str | None = None,
     w_kaggle: float = 1.0,
+    extra: list[tuple[str, float]] | None = None,
+    opp_decks: dict[str, list[int]] | None = None,
 ) -> League:
     """Assemble a `League` from the current past-checkpoint `pool` + fixed agents.
 
     `w_past` is the *total* weight for past checkpoints, split evenly across the
     pool, so the per-checkpoint weight shrinks as the pool grows (the aggregate
-    pressure from "an older me" stays constant). Specs with weight 0 are omitted."""
+    pressure from "an older me" stays constant). Specs with weight 0 are omitted.
+
+    `extra` is the manifest-driven opponent set — additional `(spec, weight)` pairs
+    (e.g. `("kaggle:archaludon", 1.0)`, `("heuristic", 0.5)`) that, with `opp_decks`
+    (spec → that opponent's own deck), make the league a mixed, asymmetric pool. It
+    coexists with the legacy single-`kaggle` flag; both feed the same `decks` map."""
     mix: list[tuple[str, float]] = [("self", w_self)]
     if pool and w_past > 0:
         per = w_past / len(pool)
@@ -102,7 +128,9 @@ def build_league(
         mix.append(("random", w_random))
     if kaggle and w_kaggle > 0:
         mix.append((f"kaggle:{kaggle}", w_kaggle))
-    return League(mix=mix, models=pool)
+    if extra:
+        mix.extend((spec, w) for spec, w in extra if w > 0)
+    return League(mix=mix, models=pool, decks=dict(opp_decks or {}))
 
 
 class DistributedCollector:
@@ -173,10 +201,12 @@ class DistributedCollector:
         spec_rng = random.Random(seed ^ 0x9E3779B9)
         specs, weights = zip(*league.mix, strict=True)
 
-        # Dispatch exactly n_games tokens; side-swap the model seat, sample opponent.
+        # Dispatch exactly n_games tokens; side-swap the model seat, sample opponent,
+        # and ship that opponent's own deck (None = mirror the trainee deck).
         for gidx in range(n_games):
             opp_spec = spec_rng.choices(specs, weights=weights, k=1)[0]
-            self._task_q.put((PLAY, gidx, gidx % 2, seed * 100003 + gidx, opp_spec))
+            opp_deck = league.decks.get(opp_spec)
+            self._task_q.put((PLAY, gidx, gidx % 2, seed * 100003 + gidx, opp_spec, opp_deck))
 
         # Per-worker, per-seat in-progress trajectories — only the CURRENT policy's
         # ("cur") decisions are buffered; frozen-opponent decisions are inference-only.

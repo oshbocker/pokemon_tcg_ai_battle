@@ -45,7 +45,15 @@ def main() -> int:
         "--champion", default="heuristic", help="agent spec (heuristic|random|first|model:<path>)"
     )
     ap.add_argument(
-        "--opponents", default="mirror,random", help="comma list (mirror=copy of champion)"
+        "--deck",
+        default=None,
+        help="champion deck CSV for model:/random/first (default agent/deck.csv); "
+        "e.g. agent/decks/archaludon.csv. heuristic/kaggle agents pilot their own deck.",
+    )
+    ap.add_argument(
+        "--opponents",
+        default="mirror,random",
+        help="comma list (mirror=copy of champion; kaggle:<name> pilots its own deck)",
     )
     ap.add_argument(
         "--games", type=int, default=400, help="total games per opponent (split 50/50 across seats)"
@@ -63,8 +71,10 @@ def main() -> int:
 
     opponents = [o.strip() for o in a.opponents.split(",") if o.strip()]
     for o in opponents:
-        if o not in NAMED_AGENTS and not o.startswith("model:"):
-            ap.error(f"unknown opponent {o!r} (allowed: {NAMED_AGENTS} or model:<path>)")
+        if o not in NAMED_AGENTS and not o.startswith(("model:", "kaggle:")):
+            ap.error(
+                f"unknown opponent {o!r} (allowed: {NAMED_AGENTS}, model:<path>, kaggle:<name>)"
+            )
 
     print(
         f"eval  champion={a.champion}  opponents={opponents}  games/opp={a.games} "
@@ -81,6 +91,7 @@ def main() -> int:
         workers=a.workers,
         max_steps=a.max_steps,
         chunk=a.chunk,
+        champion_deck=a.deck,
     )
     wall = time.time() - t0
 

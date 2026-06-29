@@ -39,6 +39,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 AGENT_DIR = REPO / "agent"
+KAGGLE_AGENT_DIR = AGENT_DIR / "kaggle_agents"
 
 # Agent specs that don't need a path argument.
 NAMED_AGENTS = ("heuristic", "random", "first", "mirror")
@@ -132,13 +133,20 @@ def _load_main_module(name: str):
     return mod
 
 
-def _load_deck_csv() -> list[int]:
-    """The fixed 60-card deck (`agent/deck.csv`) — the deck a `model:` agent plays."""
-    lines = [ln for ln in (AGENT_DIR / "deck.csv").read_text().splitlines() if ln.strip()]
+def _load_deck_csv(path: str | Path | None = None) -> list[int]:
+    """A 60-card deck CSV — the deck a `model:`/`random`/`first` champion plays.
+
+    Defaults to `agent/deck.csv`; pass a path (e.g. `agent/decks/archaludon.csv`) to
+    evaluate a model on a specific trainee deck. Relative paths resolve at the repo
+    root (workers chdir into `agent/`)."""
+    p = Path(path) if path else (AGENT_DIR / "deck.csv")
+    if not p.is_absolute():
+        p = REPO / p
+    lines = [ln for ln in p.read_text().splitlines() if ln.strip()]
     return [int(lines[i]) for i in range(60)]
 
 
-def _build_model_agent(spec: str, device: str = "cpu"):
+def _build_model_agent(spec: str, device: str = "cpu", deck_path: str | None = None):
     """Resolve `model:<path>` to (greedy agent_fn, deck). Imports torch lazily so
     the engine-only specs (and the encoding tests) never pull in the rl extra.
 
@@ -160,7 +168,7 @@ def _build_model_agent(spec: str, device: str = "cpu"):
     model = PtcgNet(cfg).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
-    deck = _load_deck_csv()
+    deck = _load_deck_csv(deck_path)
 
     @torch.no_grad()
     def agent_fn(obs_dict):
@@ -172,8 +180,14 @@ def _build_model_agent(spec: str, device: str = "cpu"):
     return agent_fn, deck
 
 
-def _build_agent(spec: str, deck: list[int], rng: random.Random, slot: str):
-    """Resolve an agent spec to (agent_fn, deck). Called once per worker, per slot."""
+def _build_agent(
+    spec: str, deck: list[int], rng: random.Random, slot: str, deck_path: str | None = None
+):
+    """Resolve an agent spec to (agent_fn, deck). Called once per worker, per slot.
+
+    `deck_path` is the champion's chosen deck for the deck-carrying-less specs
+    (`model:`/`random`/`first`); heuristic/mirror/kaggle agents ignore it and pilot
+    their own `my_deck` (their heuristics are archetype-specific)."""
     from cg.api import to_observation_class  # type: ignore[reportMissingImports]
 
     if spec in ("heuristic", "mirror"):
@@ -196,7 +210,16 @@ def _build_agent(spec: str, deck: list[int], rng: random.Random, slot: str):
 
         return agent_fn, deck
     if spec.startswith("model:"):
-        return _build_model_agent(spec)
+        return _build_model_agent(spec, deck_path=deck_path)
+    if spec.startswith("kaggle:"):
+        name = spec[len("kaggle:") :]
+        s = importlib.util.spec_from_file_location(
+            f"eval_{slot}_{name}", KAGGLE_AGENT_DIR / f"{name}.py"
+        )
+        assert s is not None and s.loader is not None
+        mod = importlib.util.module_from_spec(s)
+        s.loader.exec_module(mod)
+        return mod.agent, mod.my_deck  # the borrowed agent pilots its own deck
     raise ValueError(f"unknown agent spec: {spec!r}")
 
 
@@ -216,7 +239,7 @@ class ChunkResult:
 
 
 def _worker_chunk(task: tuple) -> ChunkResult:
-    champion_spec, opponent_spec, n_games, champ_seat, base_seed, max_steps = task
+    champion_spec, opponent_spec, n_games, champ_seat, base_seed, max_steps, champion_deck = task
     os.chdir(AGENT_DIR)
     sys.path.insert(0, str(AGENT_DIR))
     rng = random.Random(base_seed)
@@ -228,10 +251,18 @@ def _worker_chunk(task: tuple) -> ChunkResult:
         battle_start,
     )
 
-    # The opponent in a "mirror" matchup is a copy of the champion's policy.
+    # The champion's chosen deck (for model:/random/first); mirror copies the champion.
+    champ_override = _load_deck_csv(champion_deck) if champion_deck else []
     opp_resolved = champion_spec if opponent_spec == "mirror" else opponent_spec
-    champ_fn, champ_deck = _build_agent(champion_spec, [], rng, slot="champ")
-    opp_fn, opp_deck = _build_agent(opp_resolved, champ_deck, rng, slot="opp")
+    champ_fn, champ_deck = _build_agent(
+        champion_spec, champ_override, rng, slot="champ", deck_path=champion_deck
+    )
+    # A mirror opponent is the champion's policy on the champion's deck; any other
+    # opponent pilots its own deck (kaggle/heuristic) or borrows champ_deck (random).
+    opp_deck_path = champion_deck if opponent_spec == "mirror" else None
+    opp_fn, opp_deck = _build_agent(
+        opp_resolved, champ_deck, rng, slot="opp", deck_path=opp_deck_path
+    )
     if not champ_deck:  # random/first champion: borrow the heuristic deck
         champ_deck = opp_deck if opp_deck else _load_main_module("agent_deck").my_deck
 
@@ -394,6 +425,7 @@ def evaluate(
     chunk: int = 25,
     base_seed: int = 1000,
     chunk_timeout: float = 1200.0,
+    champion_deck: str | None = None,
 ) -> dict[str, MatchupSummary]:
     """Run (or resume) `games` side-swapped games of `champion` vs each opponent.
 
@@ -422,7 +454,9 @@ def evaluate(
             n_chunks = math.ceil(need / chunk) if need else 0
             for c in range(n_chunks):
                 this = min(chunk, need - c * chunk)
-                tasks.append((champion, opp, this, seat, seed + seat * 1000 + c, max_steps))
+                tasks.append(
+                    (champion, opp, this, seat, seed + seat * 1000 + c, max_steps, champion_deck)
+                )
         if not tasks:
             continue
         with ctx.Pool(workers, initializer=_init_eval_worker) as pool:
