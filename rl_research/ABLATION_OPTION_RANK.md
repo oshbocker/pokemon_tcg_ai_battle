@@ -46,13 +46,14 @@ crutch). The H2H is weakly consistent with that, but too confounded to act on.
 
 ## Decision
 
-- **Keep `use_option_rank=True` as the default** — provisional. On-distribution
+- **SETTLED (2026-06-29): keep `use_option_rank=True`.** The deferred self-play
+  (league) A/B ran clean to completion and ON wins the honest suite decisively
+  against *every* opponent — including the competent `heuristic` — so the "crutch"
+  hypothesis is refuted on-distribution. Full table + analysis at the bottom of
+  this file ("A/B COMPLETE"). The bullets below are the original provisional call.
+- ~~Keep `use_option_rank=True` as the default — provisional.~~ On-distribution
   evidence + theory favor it; cost is trivial (one small embedding).
-- **Definitive test deferred to a self-play A/B on the L4:** `--opponent self
-  --size small --seeds 4`, evaluate both arms on the honest suite (random, first,
-  heuristic) at high n. Self-play is the real use case and removes the
-  train-vs-random confound. If ON shows the "crutch overfits in self-play"
-  pattern there, flip the default to OFF.
+- ~~Definitive test deferred to a self-play A/B on the L4~~ — done; see below.
 
 ## Caveats
 
@@ -237,3 +238,48 @@ loses where it counts." **Finalize rule:** if ON's honest-suite edge over OFF is
 <5pp *and* ON loses the H2H or `heuristic`, flip to OFF (brittle crutch not
 earning its keep); if ON wins the honest suite by a clear margin, keep ON and
 treat the brittleness as floor-managed.
+
+### A/B COMPLETE — verdict: KEEP `use_option_rank=True` (SETTLED, 2026-06-29)
+
+The fixed eval (thread-pinned workers + per-chunk timeout + live prints; commit
+`52c6667`) finished the whole A/B in one session (~10.5K s) → `ablation_sp_v2`.
+Both arms trained clean (no confounding terminal collapse; best-vs-random
+selection). **Honest suite, n≈2000/opp, pooled over 2 seeds, side-swapped, Wilson 95%:**
+
+| opponent | rank ON | rank OFF | ON−OFF | z |
+|---|---|---|---|---|
+| `random` | 95.4% [94.4,96.2] | 63.5% [61.3,65.6] | **+31.9pp** | +27.2 |
+| `first`/B1 | 72.6% [70.6,74.5] | 43.7% [41.5,45.9] | **+28.9pp** | +19.4 |
+| `heuristic` | 24.9% [23.1,26.9] | 15.5% [14.0,17.2] | **+9.4pp** | +7.5 |
+
+**H2H (ON champ vs OFF opp, paired by seed, pooled): ON 65.5% [63.4,67.6]** (n=1988,
+12 draws) → ON>OFF. Per-seed: s0 ON **99.0%** (OFF s0 barely trained), s1 ON **31.6%**
+(OFF s1 wins this pocket).
+
+**Verdict: KEEP ON — the crutch hypothesis is refuted on-distribution.** ON wins all
+three honest opponents by margins far past the 5pp don't-act floor, every z ≫ 1.96.
+The decisive point is **`heuristic`**: a feature that were *merely* a crutch
+flattering weak baselines should not help against the competent scripted opponent —
+yet ON beats OFF there too (+9.4pp, z=7.5). `opt_rank` helps *across the board*, so
+the engine's strong→weak option order is a genuine free prior, not an overfit. H2H
+doesn't contradict (pooled ON>OFF), so the decision rule fires cleanly: **keep ON.**
+
+Caveats (recorded, not decision-changing):
+- **n=2 seeds, and the OFF arm trained poorly** — OFF s0 sat at ~50% vs random for
+  all 80 iters (near-failure to learn), OFF s1 only reached ~78%. So part of the
+  +31.9pp gap is "OFF undertrained," not pure feature value. But the pattern is
+  consistent across both seeds (ON 93–100% / OFF 50–78%), and the `heuristic` result
+  holds regardless — without `opt_rank` the small model + league barely learns to
+  beat random in 80 iters, which is itself the feature earning its place.
+- **Stability axis flips meaning.** Earlier I logged ON as "brittle" (entropy swings,
+  `entc` → ceiling, KL fires) vs OFF "rock-stable at the floor." This run shows OFF's
+  placid low-entropy stability *was it being stuck* (s0 never escaped ~50%), while
+  ON's entropy turbulence was the exploration that let it actually learn. The floor/
+  controller shepherded ON through it to a strong policy. The "mark against ON" is
+  outweighed decisively; not a concern.
+- **H2H s1 (OFF s1 > ON s1 despite lower vsRand) is a non-transitive pocket** — the
+  plan's central caution, expected, and dominated in the pool by s0's blowout. Trust
+  the honest suite (the metric we act on), not the H2H matchup.
+- **The heuristic wall persists for both arms** (ON 24.9%, OFF 15.5%) — orthogonal to
+  this A/B and still the P4.0 gate to Phase 4. `opt_rank` helps but doesn't solve it;
+  that's the multi-agent-pool thread's problem, not this one's.
