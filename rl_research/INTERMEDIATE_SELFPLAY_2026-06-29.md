@@ -144,5 +144,46 @@ not.
    vendoring their kernels (`ryotasueyoshi` Alakazam, a Crustle wall kernel are
    already in `outputs/kernels/`) + sibling decks, then adding manifest entries — no
    code change. Do this before the August lock to widen the robustness pressure.
+   **DONE for Starmie (2026-06-29):** see "Pool addition" below. Still TODO: Alakazam,
+   Froslass, Crustle.
 4. Re-pull the leaderboard weekly and update the pool weights toward the live
    top-band distribution (the deck-selection doc's recency-weighted objective).
+
+## Pool addition — `kaggle:starmie` (Mega Starmie ex + Cinderace), 2026-06-29
+
+Closed the biggest meta gap: **Mega Starmie ex is the #2 top-band deck** (6/34 seats,
+[[meta-snapshot-2026-06-29]]) yet was absent from the training pool, so A (Archaludon)
+was scaling without ever facing the second-most-common opponent.
+
+**Source sieve.** The two public Kaggle Starmie kernels publish **no full agent**:
+masamikobayashi *"Prize Card Tracking: 1300+ Starmie"* (gold-medal write-up; shares only
+a `PrizeTracker` helper) and map1e114514 *"Starmie Cinderace Budew Skill Agent"* (a
+`skills/` architecture write-up, no code). So `agent/kaggle_agents/starmie.py` is a
+from-scratch rule engine on the repo's own clean scoring scaffold (mirrors `archaludon.py`'s
+generic board helpers + score dispatcher), tuned to the engine's **authoritative**
+card/attack data, with the game plan informed by both write-ups. Pilots our
+replay-extracted, engine-validated top-ladder list (`agent/decks/mega_starmie.csv` →
+sibling `starmie_deck.csv`).
+
+**Game plan encoded:** Cinderace Explosiveness (face-down Active in setup) → Turbo Flare
+([C]=50, accelerate 3 Basic Energy from deck to Bench) → evolve Staryu into Mega Starmie ex
+via Mega Signal / Salvatore / Wally → attack with Jetting Blow ([W]=120 +50 bench snipe) or
+Nebula Beam ([C][C][C]=210, ignores Weakness/effects), with Crushing Hammer + Boss
+disruption. No Budew in this list (the public lists run it; ours doesn't), so no item-lock
+sub-plan. Crash-safe wrapper + `validate_kaggle_agent.py starmie` pass (legal deck + legal
+selections every decision).
+
+**Sanity eval** (`kaggle:starmie` champion, side-swapped, n=60/opp, CPU, greedy):
+
+| opponent | Starmie win rate | 95% CI | read |
+|----------|-----------------:|--------|------|
+| `random` | 93.3% | [84.1, 97.4] | plays the deck correctly, not just legally |
+| `kaggle:dragapult` | 53.3% | [40.9, 65.4] | near-even / competitive |
+| `kaggle:archaludon` | 18.3% | [10.6, 29.9] | loses to its **designed counter** (that kernel = "75% WR vs my 1300+ Starmie") — the real-world matchup, not a bug |
+
+This is a genuinely competent, archetype-accurate Starmie — far above the 5.7M CPU
+checkpoints (3–8% vs every rule agent). We deliberately did **not** tune Starmie to beat
+its hard counter; the archetype + validated deck are the pressure. Wired into
+`agent/opponents/mixed_pool.json` at **weight 1.5** (equal to the other strong archetypes,
+reflecting its #2 meta standing). Now there is enough deck diversity in the pool — Metal
+control, Water tempo, Dragon spread, Fighting/Lucario — to justify scaling A/B on the L4.

@@ -1,7 +1,8 @@
 {
-  "_comment": "Default deck-agnostic opponent pool for intermediate self-play (2026-06-29). Each Kaggle agent pilots its OWN deck (agent/kaggle_agents/<name>_deck.csv); add an archetype by dropping a vendored module + sibling deck here and adding a line — a config change, not a code change. 'self' + past checkpoints are added by the trainer, not listed here. Breadth across archetypes robustifies the trainee whichever deck it pilots (Metal control, Dragon spread, Fighting/Lucario).",
+  "_comment": "Default deck-agnostic opponent pool for intermediate self-play (2026-06-29). Each Kaggle agent pilots its OWN deck (agent/kaggle_agents/<name>_deck.csv); add an archetype by dropping a vendored module + sibling deck here and adding a line — a config change, not a code change. 'self' + past checkpoints are added by the trainer, not listed here. Breadth across archetypes robustifies the trainee whichever deck it pilots (Metal control, Water tempo, Dragon spread, Fighting/Lucario). Weights track the recency-weighted top-band meta (Archaludon #1, Mega Starmie ex #2).",
   "opponents": [
     { "agent": "kaggle:archaludon",     "weight": 1.5 },
+    { "agent": "kaggle:starmie",        "weight": 1.5 },
     { "agent": "kaggle:dragapult",      "weight": 1.5 },
     { "agent": "kaggle:romanrozen_v10", "weight": 1.0 },
     { "agent": "heuristic",             "weight": 0.5 },
