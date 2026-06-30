@@ -1,0 +1,304 @@
+Topic #714324: Scaling Reinforcement Learning to the Stars
+  Author: IsaiahP
+  Posted: 2026-06-26 04:35:34.423000
+  Votes: 106  Comments: 66
+
+Summary
+
+I trained a single 200-million-parameter transformer for 15 billion steps of self-play reinforcement learning to play both the two-player and four-player modes of Orbit Wars. I've open-sourced the code here.
+
+Motivation
+
+For this competition, I set the following goals and constraints for myself:
+
+
+
+I wanted to try fully agentic software development, so I didn't allow myself to write any code and tried to manually review as little code as possible.
+
+I wanted the model to learn as much as possible on its own, so I would use as simple an observation and action space as I could manage while still being competitive. This also meant that I stuck with pure self-play reinforcement learning and avoided any sort of imitation learning initialization.
+
+I hypothesized that Sutton's Bitter Lesson would hold: given enough training, a sufficiently expressive large model would outperform a better-engineered small one. Rather than spend my time figuring out elegant domain adaptations for encoding the features, actions, and training algorithm, I worked on pushing the model size as far as I could within the submission constraints.
+
+
+Agentic software development
+
+Codex dramatically accelerated the software development process, such that I was able to run preliminary experiments within a couple of weeks. At first, I was still doing some manual review to make sure things remained sensible, but quickly I found myself reviewing only the generated docs to make sure they aligned with my intention.
+
+I should add the caveat that Kaggle competitions are the best-case scenario for this type of experimentation, both generally and specifically. Generally, it’s nice to experiment with new ideas during competitions because the stakes are so low: if you end up with a horrible mess, you can just learn your lessons and discard the codebase entirely. Specifically, a greenfield project with no users, no production system to bring down, no backwards compatibility requirements, and little to no cost for mistakes is an ideal environment to let coding agents rip with minimal human intervention.
+
+While I was impressed with their abilities to implement specifications correctly without (too) much bloat, coding agents' suggestions and creativity often left much to be desired. This approach was an incredible accelerator to the development process, but it was not a substitute for thinking.
+
+Keeping the observation and action encoding low level
+
+While I considered doing what I’ve done in the past and carefully engineering each feature, input, and action encoding, I was curious to find out how far I could push the performance without any of these crutches for the model, so I started with the lowest level representation that made sense.
+
+
+
+I kept the observation space in its original non-aggregated form: the model saw only a collection of entities consisting of fleets, planets, and comets, alongside five observation-derived summary tokens - one for each player slot and one global one.
+
+I kept the action space simple as well, requiring the model to select whether to launch, the angle, and the fleet size directly.
+
+
+After some hyperparameter wrangling, the model was able to eventually learn a semi-reasonable policy. However, it was a far cry from being competitive, so I modified the action space such that the model only had to select a target planet instead of a raw angle. I tried a few other feature and action encodings, including planet-fleet cross-attention and discrete fleet-size bins. Both seemed unnecessary and less elegant, so I ended up using the full entity-based observation space alongside the target-based action space with continuous fleet sizing, requiring the model to learn the rest of the dynamics itself.
+
+Scaling the model
+
+This was the crux of my approach, and what allowed the model to compensate for any inadequacies in the observation or action encoding, learn the complex environment dynamics, and perform as well as it did. There were a number of interesting challenges to work through along the way, but the hypothesis held: spending time scaling training (and having the requisite compute) worked better than spending that time designing a domain-specific, smaller-scale solution.
+
+Implementation details
+
+Model architecture
+
+
+
+The input consisted of a number of relevant features for planets, comets, and fleets (e.g. radial and Euclidean position, velocity, encoded ship count) each projected separately via an MLP into a shared 768-dimensional representation. I included seventeen additional tokens: four player summary tokens, one global summary token, four actor plan tokens, four value tokens, and four scratch tokens. The player and global summary tokens were projected into the 768-dimensional hidden dimension from the observed features (total ships per player, total production per player, current step, etc.) The rest of the tokens used learned embeddings. Scratch tokens had no explicit purpose except to serve as a shared global workspace for the attention operation.
+
+Once all tokens were projected into the shared embedding space, I fed them through a 38-block residual self-attention transformer with 16 attention heads per block, layer normalization, and MLPs with a 1536-dimensional hidden layer.
+
+For each player, all planet/comet tokens were concatenated with that player's summary and plan tokens before being passed through separate source and target MLPs. The source stream was projected down to a single Bernoulli logit for eligible sources, which was sampled from to decide whether or not to launch a fleet. Sources that decided to launch used a self-attention-like formulation for picking their target:
+
+$$\frac{\mathbf{Q(source)} \cdot \mathbf{K(target)}}{\sqrt{d}}$$
+
+Then, the selected target's value vector $\mathbf{V(target)}$ was added into the source stream before being fed into a truncated discretized logistic mixture model with 8 mixture components to select the fleet size, in [3, num_ships].
+
+I computed the critic output by feeding the value tokens through an MLP and then a softmax operation over all remaining players to estimate their win probability. I sampled all actions simultaneously, and computed the joint probability over all eligible sources for each player when calculating the PPO loss.
+
+With this architecture, I could compute the actions for all players in a single forward pass, saving me 2-4x the compute over a standard one-observation-per-player approach.
+
+Navigating submission constraints
+
+I ran most early experiments using transformers with 1-5M parameters. Once I was confident that my implementation was working and the hyperparameters were reasonable, I began scaling up the model size. Each time I increased the number of parameters, the performance increased dramatically, so I continued scaling until I ran into two key limitations:
+
+
+
+The submission only gets 1 second per turn plus 60 seconds of overage time, all running on a relatively slow CPU
+
+The submission file size is capped at 100MiB
+
+
+To run inference within the time limit, I used int8 quantization for the linear layers and capped the number of visible fleets, prioritizing the largest ones. This still wasn’t enough for about 8% of 4p games when the agent was assigned to a particularly slow CPU, so in those cases, I would continue playing normally until there was 1 second of overage time remaining, at which point I would switch over to using a much faster 5M model to play out the rest of the game. According to the learned critic, most games were already decided by the time the switchover occurred, and the 5M model was able to convert 100% of its winning positions.
+
+To fit the 200M-parameter model into 100MiB, I used 4-bit NormalFloat codebook quantization with group size 128 and one fp16 scale for each group. Using this encoding, the quantized model could keep most of the original model's performance, winning ~40% of the time against the non-quantized model in a head-to-head evaluation. In the interest of running an even larger model, I tried some 3-bit encoding methods, but the performance loss from 3-bit quantization outweighed the benefit of fitting a larger model, so I stopped at 200M parameters.
+
+Environment rewrite
+
+The included Python environment was too slow for RL, so I rewrote it in Rust. I used extensive parity tests against actual replays to verify that the simulation matched. Additionally, since actions were provided by the network as (source, target) pairs, I computed the required angles using the Rust code, avoiding the sun and other planets when possible. The Rust environment was also responsible for transforming a raw observation into the required model-compatible tensors. I preallocated and reused pinned memory buffers to minimize blocking CPU-GPU transfers, and ran many environments in parallel using multithreading.
+
+Reinforcement learning with Proximal Policy Optimization
+
+I elected to use PPO instead of IMPALA because I appreciate its simplicity. Additionally, while scaling IMPALA would have required carefully balancing the data collectors with the trainers, scaling PPO was as easy as increasing the number of requested GPUs. I ran everything using distributed data parallel and found that the throughput scaled linearly with both multi-node and multi-GPU training.
+
+During training, I ran two-player and four-player games simultaneously, weighted evenly. The winner received a reward of +1 and the losers each received -1. I used pure self-play in order to maximize throughput. This was fine for two-player, but not ideal for four-player since the equilibrium dynamics are more complicated. I periodically evaluated the model head-to-head (using both 1v1 and 2v2 games) against the previous best checkpoint in order to evaluate progress. Once the model won &gt;70% of its evaluation games, it replaced the previous best checkpoint. I added policy KL and cross-entropy value loss terms against the previous best checkpoint to help stabilize training, in addition to the standard GAE-λ advantage estimation, clipped policy-gradient loss with advantage normalization, and entropy bonus.
+
+I used frequent model checkpointing and occasional warm restarts to adjust hyperparameters for the larger models midway through a run. I tried training with an action mask that prevented the model from doing obviously silly things like launching its ships into the sun, but, much to my surprise, this made the trained model worse. I hypothesize that this may have been because excluding the mask forced the model to internally model more of the physics, which helped performance in other ways. I did end up bringing the mask back for some fine-tuning near the end of training and kept it during test time.
+
+Hardware and performance
+
+For Orbit Wars, I wasn't limited to the single RTX 3090 I'd relied on in past simulation competitions. I ran larger-scale (&gt;=25M-parameter) training experiments on an 8xB200 machine with 2048 parallel environments and 64-step rollouts. In the final days, I trained across four 8xB200 nodes with 8192 parallel environments. Training the 200M-parameter model ran at ~6.3M steps per GPU-hour (~110K tokens per GPU-second); training the final model therefore took ~2400 B200-hours.
+
+Things I would do differently
+
+Stalling
+
+I kept gamma, the future returns discount factor, at 1.0 (no discounting) so that the win probability value head could stay well-defined in four-player games. This resulted in a funny play-style where the model had no incentive to win now rather than later, so it would just acquire a ship lead and then stall for the rest of the game. While this behavior is fine at inference time, it was not ideal during training because it meant a lot of compute was wasted on already-decided games. Next time, I think I'll try to include some sort of early truncation or surrender mechanism to improve the density of relevant states during training.
+
+Balancing two-player and four-player modes
+
+Throughout the competition, the top players were placed predominantly in two-player matches. I mistakenly assumed that this was the intended behavior to better differentiate the top of the leaderboard, so I prioritized two-player gameplay during the second half of training with a 90% two-player rate. I deliberately omitted implementing any sort of league play for a similar reason: it would sacrifice two-player throughput in order to stabilize four-player dynamics.
+
+Since the final submission deadline, the four-player to two-player ratio seems to have completely inverted at the top of the leaderboard: the ratio is now heavily slanted towards four-player games. Having matchmaking be so different before and after the submission deadline was frustrating. If I had known ahead of time, I would have kept the two-player and four-player rates more balanced and added league-play against past checkpoints to help prevent strategic cycles and self-overfitting, as a few other competitors have done to great effect.
+
+Closing thoughts
+
+I want to thank the organizers, and especially Bovard, for designing a great game and running a fun competition. It’s been delightful watching all of the agents play against one another and trying to analyze the games and make sense of what is and isn’t important. It’s also been wonderful reading all the write-ups - I’ve already learned so much and I can't wait for the next time!
+
+Comments:
+├─ Csipcsirip (2026-06-28 12:49:50.723000) [+1]
+│  Probably unpopular, but honest opinion:
+│  It kinda reminds me of those pay2win online games :/
+  ├─ Shane (2026-06-28 16:17:24.813000) [+1]
+  │  Nah I think it is different, clevar design is required.😃
+    ├─ Csipcsirip (2026-06-29 04:27:25.683000) [+1]
+    │  And hardware, that costs like 100k $
+    │  Definitely not available for most of us.
+├─ Cody_Null (2026-06-26 14:13:17.420000) [+16]
+│  I am torn with this, it is a super impressive and interesting solution on one hand. And on the other is there not a ruleset on Kaggle for ensuring solutions are built with resources reasonable to a...
+  ├─ Cody_Null (2026-06-26 22:56:46.850000) [+5]
+  │  Honestly I expected that this post would get a lot of downvotes, but since it hasn’t I do want to again clarify. I personally feel it would be really unfair to punish @pressman1 in any way here bec...
+    ├─  (2026-06-27 05:24:01.873000) [+0]
+  ├─ IsaiahP (2026-06-27 05:09:58.120000) [+12]
+  │  I agree with your sentiment and find myself similarly torn. Software engineering has been unbelievably accessible for all of my lifetime - you just needed curiosity and a laptop - and only recently...
+    ├─ Russell Kirk (2026-06-27 05:19:15.113000) [+3]
+    │  Regardless, the sharing of your insights and code is both interesting and appreciated!
+    ├─ Cody_Null (2026-06-27 16:30:03.973000) [+3]
+    │  Yeah I certainly think you would be up in gold regardless, if not first. Yes the compute helped, but your vision is what I would think made the difference in this competition. I think competitions ...
+    ├─ Shane (2026-06-29 20:41:49.550000) [+2]
+    │  One of my favorite parts of Kaggle is occasionally running into a solution that makes me think, "I didn't even know that was possible." Those moments are exactly why I keep competing, despite how b...
+├─ Alan C52 (2026-06-27 16:28:19.280000) [+1]
+│  Congratulations on your solution, and thanks for sharing it.
+│  
+│  I am wondering did you track logs of loss funcs? And if so, please can you share them?
+  ├─ IsaiahP (2026-06-28 13:44:19.733000) [+2]
+  │  Thanks! I did track them, but they're uninformative. The single most important metric I tracked was the win-rate against the last best checkpoint. I had a new best threshold of 70%, so I knew train...
+    ├─ Alan C52 (2026-06-29 07:09:24.303000) [+0]
+    │  Thanks for the reply, that makes sense. Reading yours and other people's solutions, I realised I probably wasted a lot of time on things that ultimately didn't matter, and made a few mistakes in my...
+├─ Navneet (2026-06-27 08:47:22.960000) [+1]
+│  Cool Scaling Reinforcement of Stars @pressman1
+├─ Geremie Yeo (2026-06-27 03:00:13.753000) [+1]
+│  tried to manually review as little code as possible
+│  
+│  
+│  curious, what are the most common mistakes you observed the AI made?
+  ├─ IsaiahP (2026-06-27 03:58:44.957000) [+4]
+  │  Not as many as I'd expect - the code almost always worked as it was supposed to. However, the most common mistake I saw was making the codebase overly complicated and messy. I tried to let it do it...
+├─ Son Pham (2026-06-27 00:30:59.757000) [+1]
+│  "I kept the action space simple as well, requiring the model to select whether to launch, the angle, and the fleet size directly."
+│  
+│  When I read this I assumed that this works and got into an insane...
+  ├─ IsaiahP (2026-06-27 03:52:10.683000) [+2]
+  │  Haha I tried for almost a week to make the direct angle action space work - it would have been so cool if it did! I still think it could learn to play that way, but would require an even larger mod...
+    ├─ Russell Kirk (2026-06-27 23:50:38.377000) [+0]
+    │  Did you try giving it just synthetic tasks to warm start the base with just that objective?  I tried to teach aiming in various ways too, but it took too much of the representation space.   E.g. Gi...
+    ├─ IsaiahP (2026-06-28 13:30:53.650000) [+1]
+    │  I didn't try any of this. In my experience, if the model architecture is expressive enough to be capable of learning some complex task, then it will learn to do so from the original reward. That be...
+├─ Jake Will (2026-06-26 05:09:48.013000) [+6]
+│  Huge congrats on the (likely 😄) win! People may see the giant model + compute and assume that's all it took. But as I learned from this competition, RL is finicky - between defining the action spac...
+  ├─ IsaiahP (2026-06-27 02:41:10.043000) [+0]
+  │  Thanks, Jake! I'm glad you appreciate all that went into it - scaling things up was definitely a challenge in and of itself. It's absolutely been such a treat competing with you and watching our ag...
+├─ Luca (2026-06-26 06:41:45.040000) [+6]
+│  Congrats on your great work and the win (we all know it)! Thanks for the detailed write up. It helped me understand what my model is facing up against 🤣. There are so many valuable ideas and philos...
+  ├─ Fei Wang (2026-06-26 06:45:33.893000) [+2]
+  │  Exactly, the first time I saw the 200M model size, I was wondering if it was a typo.
+  ├─ IsaiahP (2026-06-27 03:12:46.637000) [+2]
+  │  Thank you for your kind words and for the meme!
+  │  
+  │  PPO hyperparameter tuning feels like a different beast with every environment, but I broadly focused on tuning the LR, LR schedule, last_best model ...
+├─ Tufaben (2026-06-26 11:38:32.370000) [+3]
+│  Isaiah, the man with the biggest net.
+│  Congrats
+  ├─ IsaiahP (2026-06-27 03:34:37.850000) [+2]
+  │  Thank you Ben! I'm glad I could fit it into 100MiB :P
+├─ flg (2026-06-26 10:15:54.793000) [+3]
+│  Thanks for sharing and congrats on the deserved GM!
+│  
+│  
+│    
+│  While I was impressed with their abilities to implement specifications correctly without (too) much bloat, coding agents' suggestions and cr...
+  ├─ Tufaben (2026-06-26 11:36:53.950000) [+2]
+  │  I'm the person to blame for putting this much compute in Isaiah's hands.
+  │  But seeing it being put to good use… it warms my heart
+    ├─ Billy Bradley (2026-06-26 16:08:17.943000) [+0]
+    │  Are you hiring? 😁
+    ├─ Tufaben (2026-06-26 17:22:21.230000) [+0]
+    │  If can make effective use of all those B200s, yeah sure. Shoot me an email at benjamin at tufalabs dot ai.
+    │  
+    │  I'm actually running your code right now (because I think it's one of the most "efficient...
+    ├─ Billy Bradley (2026-06-26 19:35:11.273000) [+0]
+    │  Glad to hear it's reproducing successfully! It would certainly be exciting to see how far Ender can go with more hardware.
+    ├─ Baran Kucuk (2026-06-26 20:36:14.380000) [+0]
+    │  If you're comparing different implementations, you might find mine useful:
+    │  
+    │  https://github.com/Cleway/Distributed_Orbit_Wars
+    │  
+    │  It's a C++/CUDA rewrite of the environment with distributed PPO, and it...
+    ├─ Russell Kirk (2026-06-26 23:34:29.777000) [+0]
+    │  We could share ours -- we ran a 40M model with features we didn't realize were too expensive to train over.  One of our models was only SFT (because GRPO wasn't working) and the other model was the...
+  ├─ IsaiahP (2026-06-27 03:32:04.610000) [+1]
+  │  Thank you! And haha yes, your guess is correct; I'm grateful that Tufa Labs supported me in using the GPU cluster for this competition.
+  │  
+  │  The extra tokens only received special treatment after the t...
+├─ junlee789 (2026-06-26 14:22:51.053000) [+1]
+│  Truly master piece
+├─ Gerar Del Toro (2026-06-26 13:15:27.727000) [+1]
+│  Congrats on training such a large model, and thank you for sharing your solution!
+│  
+│  Were any residual connections or other architectural details omitted from the diagram or write-up for simplicity? ...
+  ├─ IsaiahP (2026-06-27 03:43:00.703000) [+1]
+  │  Thank you!
+  │  
+  │  The diagram doesn't capture all of the details of the model - for that you can reference the code if you're curious - but I didn't omit any important architectural decisions. I used res...
+    ├─ Gerar Del Toro (2026-06-27 22:49:12.053000) [+0]
+    │  I'll take a look into the code, thanks!
+    │  
+    │  
+    │    
+    │  partly because whenever I've tried that in the past, it always seems to hurt more than it helps.
+    │  
+    │  
+    │  Do you mean that hand-designed connections or these i...
+    ├─ IsaiahP (2026-06-28 13:39:00.533000) [+0]
+    │  I mean that in the past it has made training less stable and/or the final model worse. Usually when I'm running into the sort of problem where I wish I had a hand-designed connection, I can resolve...
+├─ Billy Bradley (2026-06-26 16:07:08.457000) [+2]
+│  Congratulations Isaiah, and thanks for this write-up! I'm surprised and impressed that such an excellent agent is possible with each planet deciding its action independently.
+  ├─ IsaiahP (2026-06-27 03:48:05.500000) [+1]
+  │  Thank you Billy! I suppose I took that part for granted, but you're right: it is a bit surprising. I think that the self-attention operation allows the planets to condition their action distributio...
+├─ Oleh Patsan (2026-06-26 07:54:33.637000) [+1]
+│  Thanks for sharing your impressive work! I was really looking forward to seeing your approach! I had a feeling you used gamma = 1, but I hadn’t considered having a separate win probability head or ...
+  ├─ IsaiahP (2026-06-27 03:24:04.870000) [+0]
+  │  Thank you!
+├─ simjeg (2026-06-26 07:32:46.323000) [+1]
+│  I though my solution was Bitter Lesson's pilled until I read yours. This is truly impressive, congratulations 👏👏👏
+│  
+│  Now I want to understand what performance I could get by increasing T to 128 and u...
+  ├─ IsaiahP (2026-06-27 03:18:52.100000) [+0]
+  │  Thank you! Your solution was awesome as well, and amazing that you got self-play going in the final week! 
+  │  
+  │  I think you're right that imitation learning is harder to scale in this setting because y...
+├─ wsc-MISX (2026-06-26 06:48:20.490000) [+1]
+│  Your solution is truly impressive. I noticed that your model often drags the game out until it ends at 500 steps. I’m wondering whether this is because you used some reward shaping, or whether you ...
+  ├─ Luca (2026-06-26 06:51:56.993000) [+0]
+  │  As mentioned in the write-up, it is likely because the gamma is set to 1.
+  ├─ IsaiahP (2026-06-27 03:14:16.880000) [+0]
+  │  Thank you! As Luca said, I believe it was because I set gamma to 1 and only used terminal rewards.
+├─ Nicolai Karcher (2026-06-26 06:21:08.683000) [+1]
+│  I noticed the 'funny play style' you mentioned - I think it's a funny coincidence that the best model also happens to be one that appears to play with it's opponent rather than finish it outright. ...
+  ├─ IsaiahP (2026-06-27 02:36:08.017000) [+1]
+  │  Haha it plays that way against itself too!
+  │  
+  │  You're right, there is definitely a potential hazard if you truncate too much that the model will forget how to play the end-game. My gut instinct would ...
+├─ CPMP (2026-06-26 07:51:22.070000) [+2]
+│  Congrats on the solution and results! You're on your way to winning this comp, which would be well deserved.
+│  
+│  Your observations about codex match mine. I now seldomly look at code and rely on parit...
+  ├─ Luca (2026-06-26 13:47:06.450000) [+2]
+  │  In PPO, if the game hasn't ended within the T-step rollout, the reward is bootstrapped from the value head.
+    ├─ CPMP (2026-06-26 18:27:15.583000) [+0]
+    │  Thanks.
+    │  
+    │  I tried somethinbg similar with 50 or 100 or 150 steps games with GRPO. using same reward as for final game. It seemed to work better, but I preferred to submit one using 500 steps as I ha...
+  ├─ IsaiahP (2026-06-27 03:23:27.647000) [+0]
+  │  Thank you for your kind words! 
+  │  
+  │  What Luca said is correct: you use the value head prediction as the reward so that you don't have to complete the rollout before training on it. The value predictio...
+    ├─ CPMP (2026-06-27 12:22:40.360000) [+0]
+    │  Thanks. 
+    │  
+    │  Let me see if I get it right.
+    │  
+    │  When you start training, the value model is random. The only signal you can learn from is when the game ends before 64 steps, right? 
+    │  
+    │  I'd like to see it ha...
+    ├─ Dipam Chakraborty (2026-06-27 12:44:15.293000) [+1]
+    │  Yes the first few times when the rollouts didn't complete the model doesn't get to learn anything (for the sparse reward), but later on value function stabilizes and you get to learn at a fixed int...
+    ├─ Nicolai Karcher (2026-06-27 12:50:08.783000) [+1]
+    │  I also struggled with understanding how the value function learns and how this works when the rollout length is not equal to the game length.
+    │  
+    │  “When you start training, the value model is random. T...
+    ├─ Billy Bradley (2026-06-27 16:30:53.783000) [+3]
+    │  I think what you're missing is that environments do not reset at the end of a rollout. They continue in-progress games in the next rollout. So you do get a learning signal from every game.
+    ├─ CPMP (2026-06-27 19:28:44.197000) [+0]
+    │  Thanks, I was wondering about it, and you answered before I asked. It is all clear now.
+├─ Fei Wang (2026-06-26 05:54:39.057000) [+2]
+│  Thanks for pushing the limit in that direction, and congrats on stepping up to GM!
+│  
+│  Just curious, does the performance plateau during your last 15B steps training? And how did you manage the learni...
+  ├─ IsaiahP (2026-06-27 02:51:29.047000) [+0]
+  │  Thank you! The performance did plateau around 14B-15B steps… but it also "plateaued" around 8B steps until I increased the batch size 4x and decreased the learning rate, at which point it continued...
+├─ David Foster (2026-06-29 14:44:18.900000) [+0]
+│  I think it's really inspiring that whilst much of the code writing was accelerate through coding agents, the 'thinking' wasn't - the fact that you've won or nearly won several RL competitions both ...
+├─ SpaTaro (2026-06-29 14:17:27.080000) [+0]
+│  Hi Isaiah, congratulations on the win and thank you for the detailed write-up! I'm curious about your training setup on the CPU side — what were the CPU specs (core count, etc.) and how much CPU me...
+├─ Sangram Patil (2026-06-27 05:32:13.593000) [+0]
+│  Congrats. if every one have same setup (8xb200) is your 200M model still survive some kaggle competition all about resources and compute.
+├─ DaoHe Liu (2026-06-26 05:36:47.153000) [+1]
+│  great work！

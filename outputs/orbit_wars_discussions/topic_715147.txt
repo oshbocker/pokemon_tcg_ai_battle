@@ -1,0 +1,182 @@
+Topic #715147: Rank ~55 solution: a first-time RL practitioner’s experience
+  Author: Abhyuday
+  Posted: 2026-06-27 21:33:57.478000
+  Votes: 7  Comments: 7
+
+I'm going to skip the stuff every other writeup already nailed, like the obs design, all-in actions,
+self-play, leagues, the env rewrite. These are just the parts I didn't see elsewhere, the things I tried, and
+what I actually learned.
+
+First, some homage
+
+Before anything, a tip of the hat to the OG Planet Wars and its #1, bocsim. Reading his and the other
+post-mortems from that era was a huge source of ideas and inspiration (here's his writeup).
+It's wild how far the bar has moved. A few thousand lines of clever heuristics was SOTA back then. Today
+even the mid-ranks are running custom architectures, PPO, leagues, imitation learning, custom transformers. So if
+your final rank wasn't sky high, just know you were competing against the best, in one of the toughest sim
+competitions, in the most demanding era it's ever had. I'm partly saying this to console myself.
+
+
+  
+My one real takeaway, something I already knew but fully felt this time. Let the agents do the
+  execution, but never delegate the thinking. Not yet, anyway. It caused me a lot of grief watching it
+  confidently come up with very dumb ideas. Honestly, maybe we should be happy they can't replicate our
+  thinking just yet.
+
+
+Why I even did this
+
+My goal was simple. Have some fun, write a bit of code in my free time. I'd never even hand-coded a
+transformer before this. But I got completely addicted to building a little brain that teaches itself to
+play a tiny space game. Watching the brain grow up, I kept finding parallels to life. A bit philosophical,
+but I found it quite elegant. I still think self-play RL is one of the most incredible ideas in ML. It's
+got me wondering what SPS I'm living at, and what raising the entropy in my own life would do.
+
+One-liner: another self-play RL solution that tried a lot of things and failed at a bunch of them.
+
+My ladder journey
+
+
+
+
+
+
+
+
+My arch
+
+4p arm was trained on an L4 for 3 days since I don't have a GPU. Probably $20 or so for final training run, but I spent maybe $100-200 for experiments. Final 2p arm uses BC.
+
+
+
+
+Agentic dev, to the stars
+
+I spent the first month trying to "mathematically" solve the game, much like @vincentschuler did. But the coding
+kept turning into a pure SWE grind, and training a brain just sounded more fun. It also didn't help that I
+got thoroughly demotivated the day Producer dropped.
+
+The funny part is that for roughly the last month I was travelling, and nearly all my "coding" happened
+through Claude on my phone. Once the env, tests, and codebase were set up, it was genuinely unreal. I'd
+talk to my phone, launch three experiments, go swim in the sea, and check the results two hours later. I
+leaned hard into fully agentic dev with a remote L4 on Google Cloud and my laptop (spot instances are super cheap!).
+
+I experimented with fully autonomous runs too. I'd set up a strict scaffold, like directory structure,
+sprint logs, and decision rules, then let Claude experiment on ideas and params on its own for 12 hours or
+so. It mostly reinforced my takeaway. Brilliant at execution, genuinely dumb at ideas. It surfaced a
+handful of usable threads that I then had to build out and validate properly myself.
+
+Where agents really shined was debugging and analysis, and two habits paid off enormously.
+
+
+
+An adversarial agent for everything I built. It would hunt for flaws, cross-check against my past
+sprint learnings (all indexed as prior art), and even pull context from the Kaggle discussions. Its
+decisions were much better for it.
+
+Curated discussion and deep data analysis. I'd hand it a hand-picked set of great threads (ty @lightmk !!, for instance) and let it use the Kaggle APIs to mine my own games for weaknesses. That's
+literally how I found out I was embarrassingly bad at 4p, then drilled into which seat was losing and
+why.
+
+
+Local evals: the only thing that tells you the truth
+
+The first real thing I built was a solid eval and observability setup, because it's the only honest signal
+of an agent's true strength. The public ladder is a noisy random walk where single games can move you
+anything from a few points to nearly a hundred. My visualizer took in any agent and did a few things.
+
+
+
+It kept a local leaderboard, where every bot I made plus all the strong public bots played, like a mini
+Kaggle ladder. I kept the top 50 or so.
+
+It ran round robin so I could read head to head matchups and kill the rock paper scissors trap. I'd only
+promote a bot once it comprehensively beat all the stronger priors, including its own exploiters.
+
+It visualized the attention and decision-making of the policy.
+
+
+
+
+
+
+
+
+
+
+
+That overlay caught my favourite bug of the whole comp. Before I had a proper HOLD action, my policy
+learned to "do nothing" by deliberately aiming at planets it couldn't reach, on the far side of the sun, so
+every launch just got dropped as infeasible. It had basically hacked the action space to express restraint.
+I'd never have spotted it without the overlay.
+
+
+
+
+A few things I tried
+
+A first-class HOLD head (autoregressive). Like a lot of people, I had the classic disease of too few
+HOLDs and loads of scattered little launches. Inspired again by AlphaStar, I gave the policy a proper
+autoregressive head. It emits launches one at a time, first the source, then the target, then the amount,
+and fires a STOP token when it's done. So "do nothing" and "do exactly these two things" become first-class
+ordered decisions instead of independent per-planet coin flips. It cost me a little training throughput,
+but the decisions got a lot cleaner, similar in spirit to Ender. I liked that his micro-step version could
+launch multiple times from the same planet. I didn't factor that into mine.
+
+
+
+Exploiters. In the final stretch I played with exploiters (à la AlphaStar). The idea is to train a
+fresh model purely to beat my best one, and it did, within about a million samples. On its own it tends to
+overfit to that one opponent. What really helped was training the exploiter back into its league, which
+stabilized it and actually improved the main bot sometimes. I didn't take it far, but I can see its use. In
+4p, plain self-play settles into a passive survivor equilibrium and just stops improving, and the exploiter
+was the only thing that broke it, worth about 15 to 17 points of first-place rate in my tests.
+
+What I learned, and what I'd do differently
+
+Honestly? I learned a ton. About machine learning, about agentic coding, and somehow about life too. And
+I'm happy with all of it. I came in to mess around in my free time and came out with a much clearer sense
+of how I'd attack the next one of these. That alone made it worth it.
+
+Am I thrilled I only landed around rank ~55? No, not really. But that happens sometimes, and you move on.
+
+The harder question is what was actually lacking, and I'll be honest, I don't really know. Maybe I needed to
+engineer a lot harder, the way @sinkingpoint squeezed a top-10 finish out of a tiny model and a $170 budget. Maybe it was just about scale, the way @pressman1 or @simjeg went big. Maybe I simply kept bolting on machinery instead of letting one clean run cook for long enough. From the inside it's genuinely hard to tell which of those it
+was, or whether it was all of them a little.
+
+So I'll throw it open to the room. Does anyone else finish a comp not really knowing what they did wrong, or
+how they'd actually improve? I'd love to hear it. 
+
+Closing
+
+I came in to write a little code for fun and ended up watching a brain teach itself. It's truly been a pleasure to be part of this, and learning from everyone. Can't wait for the next one - Will secure gold next time for sure!
+
+If there's one line to leave you with, it's the one I started with. Let the machines execute, and keep the thinking for yourself. At least while we still can…
+
+gg all 🚀
+
+Comments:
+├─ Billy Bradley (2026-06-28 07:50:56.187000) [+1]
+│  Thanks, nice writeup. I see some parallels with my own approach, particularly the autoregressive launch/stop idea. I love your visualisers!
+│  
+│  Is there a reason you used RL for the 4p model but BC fo...
+  ├─ Abhyuday (2026-06-28 10:04:20.390000) [+1]
+  │  I was using RL for both 2p and 4p until the very end, when due to the leadeboard's quality at the top, BC beat all my 2p hard work within 2 hours of training :( so I switched over to it at the very...
+    ├─ Billy Bradley (2026-06-28 10:34:06.157000) [+0]
+    │  I had a similar experience. Though my final model was around 2M parameters, I did try larger and it didn't seem to improve things. Then again, scaling is generally log linear, so maybe I didn't sca...
+    ├─ Slawek Biel (2026-06-29 16:19:07.970000) [+0]
+    │  I didn’t have a self play component, just plain BC and my experience has been the bigger the better. I started with 2 million and ended up with over forty - as big as I was able to train on my GPU ...
+├─ Tufaben (2026-06-29 13:25:46.910000) [+0]
+│  Same experience.
+│  Once i got the self play figured out (about 10 days before the end of the competition), i started the "scale up": train on more gpus for longer, with bigger models.
+│  And I got retur...
+  ├─ Abhyuday (2026-06-29 13:59:08.380000) [+1]
+  │  Turns out scaling up DL isn't so easy
+  │    Well said. That should have been the title of my post.
+  │  
+  │  
+  │  Seems scale might need more fundamental changes. I know what I'll be doing in the next comp.
+  │  
+  │  Out of...
+    ├─ Abhyuday (2026-06-29 13:59:47.553000) [+2]
+    │  It looks a bit funny without the log scale 😅
