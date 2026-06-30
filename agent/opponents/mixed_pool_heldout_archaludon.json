@@ -1,0 +1,10 @@
+{
+  "_comment": "Held-out variant of mixed_pool.json for the Archaludon self-play VALIDATION probe (2026-06-29). kaggle:archaludon is DELIBERATELY REMOVED so it can serve as a clean, deck-controlled held-out yardstick in --eval-opponents: the Archaludon trainee learns its deck via self/past mirrors + cross-archetype pressure here, then is evaluated vs the hand-coded Archaludon rule agent it NEVER trained against. Beating it >50% = self-play has provably surpassed the matched heuristic (the load-bearing thesis), not overfit to the eval opponent. Do NOT add kaggle:archaludon back to this file.",
+  "opponents": [
+    { "agent": "kaggle:starmie",        "weight": 1.5 },
+    { "agent": "kaggle:dragapult",      "weight": 1.5 },
+    { "agent": "kaggle:romanrozen_v10", "weight": 1.0 },
+    { "agent": "heuristic",             "weight": 0.5 },
+    { "agent": "random",                "weight": 0.3 }
+  ]
+}
