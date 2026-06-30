@@ -1,0 +1,206 @@
+train  size=small(5.7M, non-emb 5.0M)  option_rank=True  opponent=self  deck=archaludon_deck.csv  device=cuda
+       iters=200 games/iter=128 epochs=2 mb=256 lr=0.0003->5e-05 ent~target=0.1(adaptive) kl_cut=1.5 gamma=0.997
+       collector=dist(W=48)  league: self=1.0 past=2.0(≤5) + manifest[kaggle:starmie=1.5, kaggle:dragapult=1.5, kaggle:romanrozen_v10=1, heuristic=0.5, random=0.3]  gate>60%/200g every 10
+
+it   1  N= 7902  pg=+2.946 vf=0.270 ent=0.426 entc=0.0200 kl=+2.106* clip=0.35 upd=2 lr=3.0e-04 pool=0  19.0s
+it   2  N= 1952  pg=+0.083 vf=0.162 ent=0.140 entc=0.0200 kl=+1.624* clip=0.26 upd=8 lr=3.0e-04 pool=0  2.5s
+it   3  N= 2854  pg=+0.049 vf=0.128 ent=0.121 entc=0.0200 kl=+0.742* clip=0.22 upd=17 lr=3.0e-04 pool=0  4.4s
+it   4  N= 3048  pg=+0.062 vf=0.115 ent=0.092 entc=0.0206 kl=+0.820* clip=0.22 upd=14 lr=3.0e-04 pool=0  4.2s
+it   5  N= 2603  pg=+0.030 vf=0.147 ent=0.068 entc=0.0235 kl=+1.052 clip=0.18 upd=22 lr=2.9e-04 pool=0  4.7s
+it   6  N= 2753  pg=+0.016 vf=0.133 ent=0.070 entc=0.0265 kl=+0.412 clip=0.12 upd=22 lr=2.9e-04 pool=0  6.3s
+it   7  N= 2205  pg=+0.052 vf=0.101 ent=0.093 entc=0.0272 kl=+0.679 clip=0.18 upd=18 lr=2.9e-04 pool=0  4.3s
+it   8  N= 2342  pg=+0.071 vf=0.119 ent=0.065 entc=0.0313 kl=+0.659 clip=0.15 upd=20 lr=2.9e-04 pool=0  6.2s
+it   9  N= 2294  pg=+0.037 vf=0.136 ent=0.088 entc=0.0329 kl=+0.768 clip=0.16 upd=18 lr=2.9e-04 pool=0  4.9s
+it  10  N= 2381  pg=+0.022 vf=0.100 ent=0.064 entc=0.0380 kl=+0.555 clip=0.14 upd=20 lr=2.9e-04 pool=1  4.8s  | gate vs best 73.5%(n=200)  [PROMOTED]  | eval: mirror 25.0%(n=200)  random 85.0%(n=200)  kaggle:archaludon 30.5%(n=200)
+it  11  N= 2756  pg=+0.028 vf=0.112 ent=0.084 entc=0.0406 kl=+0.606 clip=0.16 upd=22 lr=2.9e-04 pool=1  7.0s
+it  12  N= 2187  pg=+0.076 vf=0.139 ent=0.074 entc=0.0450 kl=+0.841* clip=0.15 upd=12 lr=2.9e-04 pool=1  5.2s
+it  13  N= 2324  pg=+0.038 vf=0.106 ent=0.072 entc=0.0504 kl=+0.538 clip=0.15 upd=20 lr=2.8e-04 pool=1  6.3s
+it  14  N= 2564  pg=+0.008 vf=0.117 ent=0.047 entc=0.0622 kl=+1.299* clip=0.12 upd=22 lr=2.8e-04 pool=1  5.8s
+it  15  N= 2170  pg=+0.019 vf=0.130 ent=0.044 entc=0.0778 kl=+0.786 clip=0.12 upd=18 lr=2.8e-04 pool=1  5.5s
+it  16  N= 2347  pg=+0.005 vf=0.132 ent=0.050 entc=0.0950 kl=+0.333 clip=0.10 upd=20 lr=2.8e-04 pool=1  5.7s
+it  17  N= 3212  pg=+0.026 vf=0.157 ent=0.057 entc=0.1127 kl=+0.615* clip=0.12 upd=16 lr=2.8e-04 pool=1  5.8s
+it  18  N= 2586  pg=+0.013 vf=0.117 ent=0.088 entc=0.1184 kl=+0.653 clip=0.17 upd=22 lr=2.8e-04 pool=1  7.0s
+it  19  N= 2753  pg=+0.103 vf=0.137 ent=0.098 entc=0.1195 kl=+0.863* clip=0.17 upd=12 lr=2.8e-04 pool=1  5.0s
+it  20  N= 2722  pg=+0.051 vf=0.085 ent=0.091 entc=0.1240 kl=+1.294* clip=0.19 upd=12 lr=2.8e-04 pool=2  4.9s  | gate vs best 40.5%(n=200)  | eval: mirror 21.0%(n=200)  random 79.5%(n=200)  kaggle:archaludon 19.0%(n=200)
+it  21  N= 3646  pg=+0.053 vf=0.111 ent=0.125 entc=0.1122 kl=+0.910* clip=0.22 upd=21 lr=2.7e-04 pool=2  6.9s
+it  22  N= 2791  pg=+0.032 vf=0.098 ent=0.081 entc=0.1212 kl=+1.236 clip=0.20 upd=22 lr=2.7e-04 pool=2  7.2s
+it  23  N= 2877  pg=+0.026 vf=0.098 ent=0.103 entc=0.1198 kl=+0.470 clip=0.16 upd=24 lr=2.7e-04 pool=2  6.7s
+it  24  N= 2918  pg=+0.020 vf=0.100 ent=0.112 entc=0.1140 kl=+0.705 clip=0.18 upd=24 lr=2.7e-04 pool=2  7.9s
+it  25  N= 2766  pg=+0.013 vf=0.095 ent=0.156 entc=0.0913 kl=+0.324 clip=0.18 upd=22 lr=2.7e-04 pool=2  7.3s
+it  26  N= 3146  pg=+0.024 vf=0.082 ent=0.218 entc=0.0612 kl=+0.338 clip=0.21 upd=26 lr=2.7e-04 pool=2  8.0s
+it  27  N= 3077  pg=-0.012 vf=0.078 ent=0.240 entc=0.0410 kl=+0.240 clip=0.22 upd=26 lr=2.7e-04 pool=2  7.1s
+it  28  N= 3654  pg=+0.031 vf=0.108 ent=0.227 entc=0.0275 kl=+0.785 clip=0.25 upd=30 lr=2.7e-04 pool=2  9.0s
+it  29  N= 3312  pg=+0.029 vf=0.104 ent=0.236 entc=0.0200 kl=+0.628 clip=0.24 upd=26 lr=2.6e-04 pool=2  6.9s
+it  30  N= 4364  pg=+0.046 vf=0.086 ent=0.208 entc=0.0200 kl=+0.500 clip=0.26 upd=36 lr=2.6e-04 pool=3  9.4s  | gate vs best 75.5%(n=200)  [PROMOTED]  | eval: mirror 39.0%(n=200)  random 86.0%(n=200)  kaggle:archaludon 39.0%(n=200)
+it  31  N= 5268  pg=+0.045 vf=0.077 ent=0.179 entc=0.0200 kl=+0.612 clip=0.25 upd=42 lr=2.6e-04 pool=3  11.3s
+it  32  N= 6303  pg=+0.040 vf=0.065 ent=0.172 entc=0.0200 kl=+0.803* clip=0.25 upd=34 lr=2.6e-04 pool=3  10.7s
+it  33  N= 5853  pg=+0.039 vf=0.076 ent=0.151 entc=0.0200 kl=+0.706 clip=0.24 upd=46 lr=2.6e-04 pool=3  12.4s
+it  34  N= 6501  pg=+0.038 vf=0.071 ent=0.143 entc=0.0200 kl=+0.657 clip=0.24 upd=52 lr=2.6e-04 pool=3  13.5s
+it  35  N= 6901  pg=+0.042 vf=0.063 ent=0.139 entc=0.0200 kl=+0.501 clip=0.21 upd=54 lr=2.6e-04 pool=3  13.4s
+it  36  N= 7051  pg=+0.042 vf=0.063 ent=0.130 entc=0.0200 kl=+0.656 clip=0.21 upd=56 lr=2.6e-04 pool=3  14.2s
+it  37  N= 6894  pg=+0.025 vf=0.050 ent=0.119 entc=0.0200 kl=+0.341 clip=0.16 upd=54 lr=2.5e-04 pool=3  13.5s
+it  38  N= 6578  pg=+0.028 vf=0.059 ent=0.102 entc=0.0200 kl=+0.535 clip=0.17 upd=52 lr=2.5e-04 pool=3  13.0s
+it  39  N= 6009  pg=+0.026 vf=0.069 ent=0.095 entc=0.0204 kl=+0.349 clip=0.14 upd=48 lr=2.5e-04 pool=3  13.0s
+it  40  N= 6343  pg=+0.021 vf=0.057 ent=0.094 entc=0.0208 kl=+0.342 clip=0.14 upd=50 lr=2.5e-04 pool=4  11.8s  | gate vs best 57.0%(n=200)  | eval: mirror 56.5%(n=200)  random 93.0%(n=200)  kaggle:archaludon 52.5%(n=200)
+it  41  N= 6481  pg=+0.028 vf=0.049 ent=0.101 entc=0.0207 kl=+0.327 clip=0.15 upd=52 lr=2.5e-04 pool=4  12.5s
+it  42  N= 5611  pg=+0.019 vf=0.060 ent=0.113 entc=0.0200 kl=+0.352 clip=0.15 upd=44 lr=2.5e-04 pool=4  12.9s
+it  43  N= 6340  pg=+0.020 vf=0.062 ent=0.103 entc=0.0200 kl=+0.260 clip=0.14 upd=50 lr=2.5e-04 pool=4  13.2s
+it  44  N= 6697  pg=+0.018 vf=0.067 ent=0.123 entc=0.0200 kl=+0.285 clip=0.15 upd=54 lr=2.5e-04 pool=4  13.7s
+it  45  N= 6342  pg=+0.013 vf=0.074 ent=0.103 entc=0.0200 kl=+0.395 clip=0.15 upd=50 lr=2.4e-04 pool=4  13.8s
+it  46  N= 6380  pg=+0.017 vf=0.062 ent=0.113 entc=0.0200 kl=+0.364 clip=0.14 upd=50 lr=2.4e-04 pool=4  13.5s
+it  47  N= 6484  pg=+0.197 vf=0.062 ent=0.109 entc=0.0200 kl=+0.458 clip=0.17 upd=52 lr=2.4e-04 pool=4  13.8s
+it  48  N= 6217  pg=+0.023 vf=0.069 ent=0.116 entc=0.0200 kl=+0.289 clip=0.13 upd=50 lr=2.4e-04 pool=4  14.4s
+it  49  N= 5929  pg=+0.020 vf=0.069 ent=0.115 entc=0.0200 kl=+0.164 clip=0.13 upd=48 lr=2.4e-04 pool=4  13.0s
+it  50  N= 6892  pg=+0.019 vf=0.068 ent=0.103 entc=0.0200 kl=+0.288 clip=0.13 upd=54 lr=2.4e-04 pool=5  15.1s  | gate vs best 59.0%(n=200)  | eval: mirror 58.5%(n=200)  random 95.0%(n=200)  kaggle:archaludon 58.5%(n=200)
+it  51  N= 7100  pg=+0.017 vf=0.059 ent=0.113 entc=0.0200 kl=+0.229 clip=0.13 upd=56 lr=2.4e-04 pool=5  15.0s
+it  52  N= 6877  pg=+0.030 vf=0.060 ent=0.115 entc=0.0200 kl=+0.403 clip=0.15 upd=54 lr=2.4e-04 pool=5  14.7s
+it  53  N= 7385  pg=+0.026 vf=0.062 ent=0.121 entc=0.0200 kl=+0.287 clip=0.15 upd=58 lr=2.3e-04 pool=5  14.7s
+it  54  N= 7464  pg=+0.010 vf=0.050 ent=0.123 entc=0.0200 kl=+0.299 clip=0.14 upd=60 lr=2.3e-04 pool=5  16.2s
+it  55  N= 7318  pg=+0.024 vf=0.060 ent=0.127 entc=0.0200 kl=+0.398 clip=0.17 upd=58 lr=2.3e-04 pool=5  15.6s
+it  56  N= 7676  pg=+0.020 vf=0.041 ent=0.108 entc=0.0200 kl=+0.195 clip=0.13 upd=60 lr=2.3e-04 pool=5  15.1s
+it  57  N= 7118  pg=+0.020 vf=0.046 ent=0.116 entc=0.0200 kl=+0.266 clip=0.14 upd=56 lr=2.3e-04 pool=5  15.4s
+it  58  N= 8252  pg=+0.018 vf=0.045 ent=0.125 entc=0.0200 kl=+0.259 clip=0.15 upd=66 lr=2.3e-04 pool=5  16.1s
+it  59  N= 8086  pg=+0.014 vf=0.051 ent=0.122 entc=0.0200 kl=+0.324 clip=0.13 upd=64 lr=2.3e-04 pool=5  16.6s
+it  60  N= 8320  pg=+0.021 vf=0.057 ent=0.131 entc=0.0200 kl=+0.215 clip=0.14 upd=66 lr=2.3e-04 pool=5  16.6s  | gate vs best 71.5%(n=200)  [PROMOTED]  | eval: mirror 70.5%(n=200)  random 96.0%(n=200)  kaggle:archaludon 69.5%(n=200)
+it  61  N= 7040  pg=+0.013 vf=0.051 ent=0.146 entc=0.0200 kl=+0.255 clip=0.14 upd=56 lr=2.2e-04 pool=5  15.3s
+it  62  N= 8063  pg=+0.015 vf=0.061 ent=0.137 entc=0.0200 kl=+0.281 clip=0.15 upd=64 lr=2.2e-04 pool=5  17.0s
+it  63  N= 7472  pg=+0.011 vf=0.048 ent=0.132 entc=0.0200 kl=+0.263 clip=0.14 upd=60 lr=2.2e-04 pool=5  15.9s
+it  64  N= 7427  pg=+0.020 vf=0.064 ent=0.130 entc=0.0200 kl=+0.170 clip=0.12 upd=60 lr=2.2e-04 pool=5  16.6s
+it  65  N= 7458  pg=+0.026 vf=0.088 ent=0.135 entc=0.0200 kl=+0.358 clip=0.15 upd=60 lr=2.2e-04 pool=5  17.2s
+it  66  N= 6723  pg=+0.023 vf=0.059 ent=0.136 entc=0.0200 kl=+0.213 clip=0.15 upd=54 lr=2.2e-04 pool=5  15.2s
+it  67  N= 7942  pg=+0.028 vf=0.074 ent=0.144 entc=0.0200 kl=+0.191 clip=0.16 upd=64 lr=2.2e-04 pool=5  17.8s
+it  68  N= 7893  pg=+0.029 vf=0.067 ent=0.149 entc=0.0200 kl=+0.223 clip=0.16 upd=62 lr=2.2e-04 pool=5  18.5s
+it  69  N= 7446  pg=+0.009 vf=0.060 ent=0.149 entc=0.0200 kl=+0.234 clip=0.14 upd=60 lr=2.1e-04 pool=5  14.8s
+it  70  N= 7811  pg=+0.020 vf=0.066 ent=0.154 entc=0.0200 kl=+0.180 clip=0.15 upd=62 lr=2.1e-04 pool=5  18.1s  | gate vs best 65.0%(n=200)  [PROMOTED]  | eval: mirror 78.0%(n=200)  random 93.0%(n=200)  kaggle:archaludon 73.5%(n=200)
+it  71  N= 8323  pg=+0.026 vf=0.063 ent=0.163 entc=0.0200 kl=+0.294 clip=0.17 upd=66 lr=2.1e-04 pool=5  20.6s
+it  72  N= 8302  pg=+0.018 vf=0.066 ent=0.158 entc=0.0200 kl=+0.189 clip=0.16 upd=66 lr=2.1e-04 pool=5  18.8s
+it  73  N= 8234  pg=+0.015 vf=0.059 ent=0.158 entc=0.0200 kl=+0.199 clip=0.14 upd=66 lr=2.1e-04 pool=5  19.2s
+it  74  N= 8045  pg=+0.019 vf=0.060 ent=0.153 entc=0.0200 kl=+0.132 clip=0.15 upd=64 lr=2.1e-04 pool=5  18.1s
+it  75  N= 7976  pg=+0.024 vf=0.074 ent=0.152 entc=0.0200 kl=+0.121 clip=0.14 upd=64 lr=2.1e-04 pool=5  18.9s
+it  76  N= 7590  pg=+0.018 vf=0.058 ent=0.152 entc=0.0200 kl=+0.219 clip=0.15 upd=60 lr=2.1e-04 pool=5  17.8s
+it  77  N= 7517  pg=+0.014 vf=0.072 ent=0.152 entc=0.0200 kl=+0.224 clip=0.14 upd=60 lr=2.0e-04 pool=5  17.4s
+it  78  N= 7115  pg=+0.015 vf=0.063 ent=0.145 entc=0.0200 kl=+0.156 clip=0.13 upd=56 lr=2.0e-04 pool=5  17.3s
+it  79  N= 7307  pg=+0.019 vf=0.062 ent=0.155 entc=0.0200 kl=+0.169 clip=0.13 upd=58 lr=2.0e-04 pool=5  17.1s
+it  80  N= 8161  pg=+0.011 vf=0.071 ent=0.161 entc=0.0200 kl=+0.116 clip=0.13 upd=64 lr=2.0e-04 pool=5  19.2s  | gate vs best 47.5%(n=200)  | eval: mirror 82.5%(n=200)  random 97.0%(n=200)  kaggle:archaludon 80.0%(n=200)
+it  81  N= 8271  pg=+0.016 vf=0.065 ent=0.161 entc=0.0200 kl=+0.132 clip=0.14 upd=66 lr=2.0e-04 pool=5  19.5s
+it  82  N= 7813  pg=+0.016 vf=0.068 ent=0.152 entc=0.0200 kl=+0.213 clip=0.13 upd=62 lr=2.0e-04 pool=5  18.8s
+it  83  N= 6978  pg=+0.012 vf=0.065 ent=0.166 entc=0.0200 kl=+0.105 clip=0.14 upd=56 lr=2.0e-04 pool=5  17.0s
+it  84  N= 7076  pg=+0.013 vf=0.076 ent=0.159 entc=0.0200 kl=+0.163 clip=0.13 upd=56 lr=2.0e-04 pool=5  18.0s
+it  85  N= 7626  pg=+0.015 vf=0.071 ent=0.144 entc=0.0200 kl=+0.120 clip=0.12 upd=60 lr=1.9e-04 pool=5  17.6s
+it  86  N= 7704  pg=+0.006 vf=0.066 ent=0.156 entc=0.0200 kl=+0.127 clip=0.13 upd=62 lr=1.9e-04 pool=5  19.4s
+it  87  N= 8095  pg=+0.017 vf=0.074 ent=0.156 entc=0.0200 kl=+0.116 clip=0.13 upd=64 lr=1.9e-04 pool=5  18.0s
+it  88  N= 7289  pg=+0.010 vf=0.064 ent=0.154 entc=0.0200 kl=+0.093 clip=0.12 upd=58 lr=1.9e-04 pool=5  16.1s
+it  89  N= 7692  pg=+0.009 vf=0.074 ent=0.158 entc=0.0200 kl=+0.223 clip=0.13 upd=62 lr=1.9e-04 pool=5  18.5s
+it  90  N= 7733  pg=+0.017 vf=0.067 ent=0.138 entc=0.0200 kl=+0.125 clip=0.12 upd=62 lr=1.9e-04 pool=5  17.7s  | gate vs best 52.5%(n=200)  | eval: mirror 81.0%(n=200)  random 93.5%(n=200)  kaggle:archaludon 74.0%(n=200)
+it  91  N= 7734  pg=+0.009 vf=0.068 ent=0.145 entc=0.0200 kl=+0.432 clip=0.13 upd=62 lr=1.9e-04 pool=5  18.8s
+it  92  N= 7368  pg=+0.009 vf=0.060 ent=0.147 entc=0.0200 kl=+0.288 clip=0.11 upd=58 lr=1.9e-04 pool=5  18.1s
+it  93  N= 7926  pg=+0.009 vf=0.069 ent=0.159 entc=0.0200 kl=+0.088 clip=0.11 upd=62 lr=1.8e-04 pool=5  17.2s
+it  94  N= 7109  pg=+0.011 vf=0.061 ent=0.157 entc=0.0200 kl=+0.220 clip=0.13 upd=56 lr=1.8e-04 pool=5  15.7s
+it  95  N= 7934  pg=+0.011 vf=0.072 ent=0.167 entc=0.0200 kl=+0.239 clip=0.13 upd=62 lr=1.8e-04 pool=5  19.1s
+it  96  N= 7632  pg=+0.010 vf=0.062 ent=0.161 entc=0.0200 kl=+0.234 clip=0.11 upd=60 lr=1.8e-04 pool=5  17.7s
+it  97  N= 7507  pg=+0.007 vf=0.064 ent=0.163 entc=0.0200 kl=+0.091 clip=0.12 upd=60 lr=1.8e-04 pool=5  17.3s
+it  98  N= 7501  pg=+0.015 vf=0.065 ent=0.171 entc=0.0200 kl=+0.215 clip=0.13 upd=60 lr=1.8e-04 pool=5  18.2s
+it  99  N= 7680  pg=+0.009 vf=0.065 ent=0.163 entc=0.0200 kl=+0.125 clip=0.12 upd=60 lr=1.8e-04 pool=5  19.2s
+it 100  N= 7963  pg=+0.012 vf=0.073 ent=0.184 entc=0.0200 kl=+0.080 clip=0.12 upd=64 lr=1.8e-04 pool=5  18.5s  | gate vs best 49.0%(n=200)  | eval: mirror 75.5%(n=200)  random 94.5%(n=200)  kaggle:archaludon 73.5%(n=200)
+it 101  N= 7856  pg=+0.009 vf=0.067 ent=0.195 entc=0.0200 kl=+0.067 clip=0.13 upd=62 lr=1.7e-04 pool=5  18.9s
+it 102  N= 8114  pg=+0.007 vf=0.066 ent=0.200 entc=0.0200 kl=+0.071 clip=0.13 upd=64 lr=1.7e-04 pool=5  18.0s
+it 103  N= 7879  pg=+0.008 vf=0.062 ent=0.223 entc=0.0200 kl=+0.128 clip=0.15 upd=62 lr=1.7e-04 pool=5  19.6s
+it 104  N= 8534  pg=+0.012 vf=0.066 ent=0.206 entc=0.0200 kl=+0.103 clip=0.14 upd=68 lr=1.7e-04 pool=5  20.4s
+it 105  N= 8598  pg=+0.014 vf=0.057 ent=0.216 entc=0.0200 kl=+0.092 clip=0.14 upd=68 lr=1.7e-04 pool=5  19.8s
+it 106  N= 8385  pg=+0.014 vf=0.058 ent=0.208 entc=0.0200 kl=+0.088 clip=0.14 upd=66 lr=1.7e-04 pool=5  19.2s
+it 107  N= 8114  pg=+0.007 vf=0.070 ent=0.216 entc=0.0200 kl=+0.067 clip=0.14 upd=64 lr=1.7e-04 pool=5  19.1s
+it 108  N= 8563  pg=+0.010 vf=0.062 ent=0.229 entc=0.0200 kl=+0.073 clip=0.14 upd=68 lr=1.7e-04 pool=5  19.0s
+it 109  N= 8610  pg=+0.011 vf=0.067 ent=0.247 entc=0.0200 kl=+0.076 clip=0.16 upd=68 lr=1.6e-04 pool=5  20.0s
+it 110  N= 8309  pg=+0.010 vf=0.065 ent=0.230 entc=0.0200 kl=+0.083 clip=0.15 upd=66 lr=1.6e-04 pool=5  20.5s  | gate vs best 54.5%(n=200)  | eval: mirror 76.0%(n=200)  random 89.5%(n=200)  kaggle:archaludon 78.5%(n=200)
+it 111  N= 8947  pg=+0.009 vf=0.063 ent=0.244 entc=0.0200 kl=+0.107 clip=0.17 upd=70 lr=1.6e-04 pool=5  20.8s
+it 112  N= 8434  pg=+0.012 vf=0.060 ent=0.231 entc=0.0200 kl=+0.097 clip=0.16 upd=66 lr=1.6e-04 pool=5  20.1s
+it 113  N= 8950  pg=+0.012 vf=0.056 ent=0.249 entc=0.0200 kl=+0.304 clip=0.15 upd=70 lr=1.6e-04 pool=5  20.7s
+it 114  N= 8430  pg=+0.014 vf=0.052 ent=0.244 entc=0.0200 kl=+0.147 clip=0.15 upd=66 lr=1.6e-04 pool=5  21.4s
+it 115  N= 9157  pg=+0.003 vf=0.060 ent=0.232 entc=0.0200 kl=+0.090 clip=0.13 upd=72 lr=1.6e-04 pool=5  18.6s
+it 116  N= 9294  pg=+0.013 vf=0.058 ent=0.247 entc=0.0200 kl=+0.079 clip=0.15 upd=74 lr=1.6e-04 pool=5  20.3s
+it 117  N= 9288  pg=+0.010 vf=0.062 ent=0.260 entc=0.0200 kl=+0.068 clip=0.16 upd=74 lr=1.5e-04 pool=5  20.7s
+it 118  N= 8817  pg=+0.008 vf=0.063 ent=0.273 entc=0.0200 kl=+0.079 clip=0.16 upd=70 lr=1.5e-04 pool=5  20.2s
+it 119  N= 8532  pg=+0.006 vf=0.066 ent=0.277 entc=0.0200 kl=+0.085 clip=0.17 upd=68 lr=1.5e-04 pool=5  19.7s
+it 120  N= 9309  pg=+0.007 vf=0.066 ent=0.286 entc=0.0200 kl=+0.075 clip=0.16 upd=74 lr=1.5e-04 pool=5  21.2s  | gate vs best 60.5%(n=200)  [PROMOTED]  | eval: mirror 80.0%(n=200)  random 89.0%(n=200)  kaggle:archaludon 80.5%(n=200)
+it 121  N= 8436  pg=+0.006 vf=0.061 ent=0.281 entc=0.0200 kl=+0.068 clip=0.15 upd=66 lr=1.5e-04 pool=5  19.6s
+it 122  N= 8992  pg=+0.006 vf=0.062 ent=0.289 entc=0.0200 kl=+0.115 clip=0.17 upd=72 lr=1.5e-04 pool=5  20.5s
+it 123  N= 8340  pg=+0.010 vf=0.066 ent=0.301 entc=0.0200 kl=+0.083 clip=0.16 upd=66 lr=1.5e-04 pool=5  19.8s
+it 124  N= 8644  pg=+0.008 vf=0.049 ent=0.287 entc=0.0200 kl=+0.070 clip=0.15 upd=68 lr=1.5e-04 pool=5  19.6s
+it 125  N= 8846  pg=+0.007 vf=0.057 ent=0.289 entc=0.0200 kl=+0.065 clip=0.16 upd=70 lr=1.4e-04 pool=5  20.4s
+it 126  N= 8914  pg=+0.004 vf=0.064 ent=0.293 entc=0.0200 kl=+0.111 clip=0.15 upd=70 lr=1.4e-04 pool=5  20.8s
+it 127  N= 8558  pg=+0.003 vf=0.064 ent=0.301 entc=0.0200 kl=+0.050 clip=0.14 upd=68 lr=1.4e-04 pool=5  20.5s
+it 128  N= 8260  pg=+0.005 vf=0.063 ent=0.297 entc=0.0200 kl=+0.057 clip=0.15 upd=66 lr=1.4e-04 pool=5  19.3s
+it 129  N= 9337  pg=+0.004 vf=0.059 ent=0.300 entc=0.0200 kl=+0.047 clip=0.16 upd=74 lr=1.4e-04 pool=5  21.5s
+it 130  N= 7559  pg=+0.005 vf=0.051 ent=0.286 entc=0.0200 kl=+0.053 clip=0.14 upd=60 lr=1.4e-04 pool=5  17.3s  | gate vs best 63.5%(n=200)  [PROMOTED]  | eval: mirror 89.0%(n=200)  random 97.0%(n=200)  kaggle:archaludon 88.5%(n=200)
+it 131  N= 8453  pg=+0.001 vf=0.073 ent=0.275 entc=0.0200 kl=+0.055 clip=0.13 upd=68 lr=1.4e-04 pool=5  19.7s
+it 132  N= 8492  pg=+0.006 vf=0.061 ent=0.294 entc=0.0200 kl=+0.063 clip=0.15 upd=68 lr=1.4e-04 pool=5  20.6s
+it 133  N= 7786  pg=+0.005 vf=0.069 ent=0.297 entc=0.0200 kl=+0.057 clip=0.15 upd=62 lr=1.3e-04 pool=5  18.7s
+it 134  N= 8780  pg=+0.004 vf=0.063 ent=0.302 entc=0.0200 kl=+0.067 clip=0.15 upd=70 lr=1.3e-04 pool=5  20.5s
+it 135  N= 8704  pg=+0.003 vf=0.054 ent=0.320 entc=0.0200 kl=+0.066 clip=0.14 upd=68 lr=1.3e-04 pool=5  19.3s
+it 136  N= 8505  pg=+0.003 vf=0.066 ent=0.333 entc=0.0200 kl=+0.065 clip=0.16 upd=68 lr=1.3e-04 pool=5  20.0s
+it 137  N= 9157  pg=+0.004 vf=0.059 ent=0.337 entc=0.0200 kl=+0.058 clip=0.16 upd=72 lr=1.3e-04 pool=5  20.4s
+it 138  N= 8673  pg=+0.008 vf=0.064 ent=0.348 entc=0.0200 kl=+0.054 clip=0.17 upd=68 lr=1.3e-04 pool=5  21.0s
+it 139  N= 8734  pg=+0.002 vf=0.064 ent=0.361 entc=0.0200 kl=+0.056 clip=0.16 upd=70 lr=1.3e-04 pool=5  19.7s
+it 140  N= 8438  pg=+0.003 vf=0.061 ent=0.371 entc=0.0200 kl=+0.042 clip=0.16 upd=66 lr=1.3e-04 pool=5  20.1s  | gate vs best 55.5%(n=200)  | eval: mirror 93.0%(n=200)  random 94.5%(n=200)  kaggle:archaludon 86.5%(n=200)
+it 141  N= 8503  pg=+0.001 vf=0.065 ent=0.365 entc=0.0200 kl=+0.057 clip=0.15 upd=68 lr=1.2e-04 pool=5  19.5s
+it 142  N= 8409  pg=+0.002 vf=0.066 ent=0.374 entc=0.0200 kl=+0.051 clip=0.15 upd=66 lr=1.2e-04 pool=5  19.9s
+it 143  N= 8436  pg=+0.002 vf=0.070 ent=0.394 entc=0.0200 kl=+0.033 clip=0.15 upd=66 lr=1.2e-04 pool=5  20.3s
+it 144  N= 8586  pg=+0.003 vf=0.070 ent=0.397 entc=0.0200 kl=+0.048 clip=0.16 upd=68 lr=1.2e-04 pool=5  20.3s
+it 145  N= 7447  pg=+0.003 vf=0.068 ent=0.380 entc=0.0200 kl=+0.037 clip=0.15 upd=60 lr=1.2e-04 pool=5  18.8s
+it 146  N= 7746  pg=-0.001 vf=0.066 ent=0.390 entc=0.0200 kl=+0.060 clip=0.17 upd=62 lr=1.2e-04 pool=5  19.0s
+it 147  N= 7528  pg=-0.001 vf=0.077 ent=0.393 entc=0.0200 kl=+0.050 clip=0.15 upd=60 lr=1.2e-04 pool=5  18.4s
+it 148  N= 7993  pg=-0.003 vf=0.071 ent=0.409 entc=0.0200 kl=+0.032 clip=0.16 upd=64 lr=1.2e-04 pool=5  20.2s
+it 149  N= 7199  pg=-0.006 vf=0.069 ent=0.406 entc=0.0200 kl=+0.036 clip=0.15 upd=58 lr=1.1e-04 pool=5  17.0s
+it 150  N= 8193  pg=-0.022 vf=0.077 ent=0.418 entc=0.0200 kl=+0.039 clip=0.17 upd=66 lr=1.1e-04 pool=5  19.9s  | gate vs best 56.0%(n=200)  | eval: mirror 89.0%(n=200)  random 98.5%(n=200)  kaggle:archaludon 90.5%(n=200)
+it 151  N= 7722  pg=+0.003 vf=0.071 ent=0.418 entc=0.0200 kl=+0.043 clip=0.15 upd=62 lr=1.1e-04 pool=5  20.3s
+it 152  N= 7825  pg=-0.001 vf=0.075 ent=0.418 entc=0.0200 kl=+0.033 clip=0.15 upd=62 lr=1.1e-04 pool=5  18.2s
+it 153  N= 7971  pg=-0.000 vf=0.069 ent=0.423 entc=0.0200 kl=+0.042 clip=0.16 upd=64 lr=1.1e-04 pool=5  20.9s
+it 154  N= 7723  pg=+0.002 vf=0.076 ent=0.418 entc=0.0200 kl=+0.038 clip=0.15 upd=62 lr=1.1e-04 pool=5  19.4s
+it 155  N= 7290  pg=-0.001 vf=0.069 ent=0.426 entc=0.0200 kl=+0.037 clip=0.15 upd=58 lr=1.1e-04 pool=5  18.7s
+it 156  N= 8102  pg=-0.000 vf=0.066 ent=0.423 entc=0.0200 kl=+0.034 clip=0.15 upd=64 lr=1.1e-04 pool=5  20.6s
+it 157  N= 8310  pg=-0.002 vf=0.064 ent=0.419 entc=0.0200 kl=+0.043 clip=0.15 upd=66 lr=1.0e-04 pool=5  21.3s
+it 158  N= 7816  pg=-0.001 vf=0.069 ent=0.408 entc=0.0200 kl=+0.030 clip=0.15 upd=62 lr=1.0e-04 pool=5  19.8s
+it 159  N= 7742  pg=-0.003 vf=0.079 ent=0.390 entc=0.0200 kl=+0.033 clip=0.14 upd=62 lr=1.0e-04 pool=5  19.7s
+it 160  N= 7477  pg=+0.001 vf=0.068 ent=0.389 entc=0.0200 kl=+0.035 clip=0.13 upd=60 lr=1.0e-04 pool=5  17.7s  | gate vs best 48.0%(n=200)  | eval: mirror 91.0%(n=200)  random 98.5%(n=200)  kaggle:archaludon 90.5%(n=200)
+it 161  N= 7916  pg=-0.002 vf=0.070 ent=0.413 entc=0.0200 kl=+0.028 clip=0.14 upd=62 lr=9.9e-05 pool=5  19.6s
+it 162  N= 7973  pg=+0.005 vf=0.071 ent=0.409 entc=0.0200 kl=+0.033 clip=0.15 upd=64 lr=9.8e-05 pool=5  19.5s
+it 163  N= 7661  pg=-0.004 vf=0.066 ent=0.398 entc=0.0200 kl=+0.024 clip=0.13 upd=60 lr=9.6e-05 pool=5  19.4s
+it 164  N= 7832  pg=-0.001 vf=0.068 ent=0.396 entc=0.0200 kl=+0.034 clip=0.13 upd=62 lr=9.5e-05 pool=5  18.8s
+it 165  N= 8177  pg=+0.002 vf=0.073 ent=0.421 entc=0.0200 kl=+0.034 clip=0.14 upd=64 lr=9.4e-05 pool=5  20.6s
+it 166  N= 8245  pg=+0.000 vf=0.061 ent=0.426 entc=0.0200 kl=+0.033 clip=0.15 upd=66 lr=9.3e-05 pool=5  18.8s
+it 167  N= 7978  pg=-0.001 vf=0.066 ent=0.427 entc=0.0200 kl=+0.031 clip=0.14 upd=64 lr=9.1e-05 pool=5  20.5s
+it 168  N= 7614  pg=-0.005 vf=0.070 ent=0.427 entc=0.0200 kl=+0.030 clip=0.13 upd=60 lr=9.0e-05 pool=5  18.9s
+it 169  N= 7311  pg=-0.005 vf=0.071 ent=0.413 entc=0.0200 kl=+0.026 clip=0.13 upd=58 lr=8.9e-05 pool=5  17.3s
+it 170  N= 7472  pg=-0.006 vf=0.066 ent=0.422 entc=0.0200 kl=+0.025 clip=0.13 upd=60 lr=8.8e-05 pool=5  18.5s  | gate vs best 63.0%(n=200)  [PROMOTED]  | eval: mirror 92.5%(n=200)  random 97.0%(n=200)  kaggle:archaludon 92.5%(n=200)
+it 171  N= 8336  pg=-0.002 vf=0.073 ent=0.432 entc=0.0200 kl=+0.032 clip=0.14 upd=66 lr=8.6e-05 pool=5  19.0s
+it 172  N= 7936  pg=-0.004 vf=0.069 ent=0.438 entc=0.0200 kl=+0.025 clip=0.13 upd=62 lr=8.5e-05 pool=5  18.4s
+it 173  N= 7625  pg=-0.005 vf=0.070 ent=0.447 entc=0.0200 kl=+0.026 clip=0.13 upd=60 lr=8.4e-05 pool=5  18.7s
+it 174  N= 8657  pg=-0.005 vf=0.063 ent=0.452 entc=0.0200 kl=+0.030 clip=0.15 upd=68 lr=8.3e-05 pool=5  19.5s
+it 175  N= 7413  pg=-0.004 vf=0.065 ent=0.448 entc=0.0200 kl=+0.029 clip=0.13 upd=58 lr=8.1e-05 pool=5  18.1s
+it 176  N= 8156  pg=-0.004 vf=0.078 ent=0.421 entc=0.0200 kl=+0.032 clip=0.14 upd=64 lr=8.0e-05 pool=5  19.7s
+it 177  N= 8372  pg=-0.002 vf=0.060 ent=0.451 entc=0.0200 kl=+0.033 clip=0.13 upd=66 lr=7.9e-05 pool=5  20.3s
+it 178  N= 8138  pg=-0.004 vf=0.071 ent=0.452 entc=0.0200 kl=+0.033 clip=0.13 upd=64 lr=7.8e-05 pool=5  20.0s
+it 179  N= 8366  pg=-0.003 vf=0.054 ent=0.441 entc=0.0200 kl=+0.016 clip=0.11 upd=66 lr=7.6e-05 pool=5  19.5s
+it 180  N= 7670  pg=+0.045 vf=0.056 ent=0.458 entc=0.0200 kl=+0.026 clip=0.12 upd=60 lr=7.5e-05 pool=5  18.7s  | gate vs best 50.5%(n=200)  | eval: mirror 96.0%(n=200)  random 96.0%(n=200)  kaggle:archaludon 95.5%(n=200)
+it 181  N= 8073  pg=-0.003 vf=0.075 ent=0.448 entc=0.0200 kl=+0.026 clip=0.13 upd=64 lr=7.4e-05 pool=5  19.8s
+it 182  N= 8172  pg=-0.005 vf=0.079 ent=0.452 entc=0.0200 kl=+0.028 clip=0.12 upd=64 lr=7.3e-05 pool=5  18.8s
+it 183  N= 7996  pg=-0.005 vf=0.064 ent=0.457 entc=0.0200 kl=+0.025 clip=0.12 upd=64 lr=7.1e-05 pool=5  19.7s
+it 184  N= 8371  pg=-0.004 vf=0.057 ent=0.451 entc=0.0200 kl=+0.020 clip=0.11 upd=66 lr=7.0e-05 pool=5  22.2s
+it 185  N= 8419  pg=-0.004 vf=0.066 ent=0.441 entc=0.0200 kl=+0.037 clip=0.10 upd=66 lr=6.9e-05 pool=5  21.2s
+it 186  N= 8681  pg=-0.006 vf=0.060 ent=0.461 entc=0.0200 kl=+0.022 clip=0.12 upd=68 lr=6.8e-05 pool=5  22.0s
+it 187  N= 8221  pg=-0.001 vf=0.065 ent=0.458 entc=0.0200 kl=+0.021 clip=0.12 upd=66 lr=6.6e-05 pool=5  21.8s
+it 188  N= 8888  pg=-0.005 vf=0.070 ent=0.474 entc=0.0200 kl=+0.028 clip=0.12 upd=70 lr=6.5e-05 pool=5  21.7s
+it 189  N= 8013  pg=-0.007 vf=0.065 ent=0.464 entc=0.0200 kl=+0.019 clip=0.11 upd=64 lr=6.4e-05 pool=5  20.7s
+it 190  N= 7469  pg=-0.005 vf=0.063 ent=0.481 entc=0.0200 kl=+0.021 clip=0.11 upd=60 lr=6.3e-05 pool=5  18.4s  | gate vs best 51.5%(n=200)  | eval: mirror 94.0%(n=200)  random 95.5%(n=200)  kaggle:archaludon 93.0%(n=200)
+it 191  N= 8016  pg=-0.008 vf=0.070 ent=0.478 entc=0.0200 kl=+0.027 clip=0.11 upd=64 lr=6.1e-05 pool=5  18.7s
+it 192  N= 8084  pg=-0.006 vf=0.067 ent=0.482 entc=0.0200 kl=+0.022 clip=0.12 upd=64 lr=6.0e-05 pool=5  19.4s
+it 193  N= 9252  pg=-0.005 vf=0.065 ent=0.465 entc=0.0200 kl=+0.018 clip=0.12 upd=74 lr=5.9e-05 pool=5  21.6s
+it 194  N= 8118  pg=-0.008 vf=0.072 ent=0.472 entc=0.0200 kl=+0.020 clip=0.12 upd=64 lr=5.8e-05 pool=5  19.9s
+it 195  N= 8247  pg=-0.003 vf=0.058 ent=0.475 entc=0.0200 kl=+0.016 clip=0.11 upd=66 lr=5.6e-05 pool=5  20.6s
+it 196  N= 8505  pg=-0.004 vf=0.069 ent=0.477 entc=0.0200 kl=+0.023 clip=0.12 upd=68 lr=5.5e-05 pool=5  20.5s
+it 197  N= 7912  pg=-0.006 vf=0.071 ent=0.497 entc=0.0200 kl=+0.021 clip=0.10 upd=62 lr=5.4e-05 pool=5  19.7s
+it 198  N= 9574  pg=-0.006 vf=0.070 ent=0.509 entc=0.0200 kl=+0.017 clip=0.11 upd=76 lr=5.3e-05 pool=5  21.3s
+it 199  N= 8069  pg=-0.007 vf=0.065 ent=0.491 entc=0.0200 kl=+0.019 clip=0.10 upd=64 lr=5.1e-05 pool=5  19.7s
+it 200  N= 8392  pg=-0.007 vf=0.059 ent=0.484 entc=0.0200 kl=+0.016 clip=0.10 upd=66 lr=5.0e-05 pool=5  19.6s  | gate vs best 62.0%(n=200)  [PROMOTED]  | eval: mirror 94.0%(n=200)  random 98.5%(n=200)  kaggle:archaludon 92.5%(n=200)
+
+done. best gate vs best = 62.0%  ->  /content/drive/MyDrive/ptcg_outputs/probe_archaludon_small

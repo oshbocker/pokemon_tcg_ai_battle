@@ -1,0 +1,41 @@
+train  size=small(5.7M, non-emb 5.0M)  option_rank=True  opponent=self  deck=deck.csv  device=cuda
+       iters=35 games/iter=128 epochs=2 mb=256 lr=0.0003->5e-05 ent~target=0.1(adaptive) kl_cut=1.5 gamma=0.997
+       collector=dist(W=32)  league: self=1.0 past=2.0(≤4) + manifest[kaggle:archaludon=1.5, kaggle:starmie=1.5, kaggle:dragapult=1.5, kaggle:romanrozen_v10=1, heuristic=0.5, random=0.3]  gate>55%/120g every 5
+
+it   1  N= 6647  pg=+0.197 vf=0.069 ent=0.440 entc=0.0200 kl=+2.526* clip=0.49 upd=3 lr=3.0e-04 pool=0  15.2s
+it   2  N= 7600  pg=+0.074 vf=0.083 ent=0.097 entc=0.0202 kl=+0.790* clip=0.24 upd=32 lr=2.9e-04 pool=0  8.7s
+it   3  N= 7877  pg=+0.038 vf=0.050 ent=0.040 entc=0.0257 kl=+0.874 clip=0.15 upd=62 lr=2.9e-04 pool=0  10.3s
+it   4  N= 7995  pg=+0.021 vf=0.042 ent=0.026 entc=0.0345 kl=+0.617* clip=0.08 upd=35 lr=2.8e-04 pool=0  8.3s
+it   5  N= 7328  pg=+0.022 vf=0.035 ent=0.025 entc=0.0465 kl=+0.840 clip=0.09 upd=58 lr=2.7e-04 pool=1  10.2s  | gate vs best 46.7%(n=120)  | eval: random 39.2%(n=120)
+it   6  N= 7348  pg=+0.021 vf=0.037 ent=0.030 entc=0.0615 kl=+0.939* clip=0.11 upd=51 lr=2.6e-04 pool=1  11.8s
+it   7  N= 8738  pg=+0.017 vf=0.054 ent=0.043 entc=0.0773 kl=+0.518 clip=0.11 upd=70 lr=2.6e-04 pool=1  13.7s
+it   8  N= 7130  pg=+0.021 vf=0.043 ent=0.082 entc=0.0831 kl=+0.889* clip=0.15 upd=30 lr=2.5e-04 pool=1  9.6s
+it   9  N= 6943  pg=+0.039 vf=0.050 ent=0.101 entc=0.0828 kl=+1.478* clip=0.23 upd=29 lr=2.4e-04 pool=1  9.7s
+it  10  N= 9361  pg=+0.024 vf=0.034 ent=0.107 entc=0.0805 kl=+1.054 clip=0.21 upd=74 lr=2.3e-04 pool=2  14.6s  | gate vs best 60.0%(n=120)  [PROMOTED]  | eval: random 63.3%(n=120)
+it  11  N= 8162  pg=+0.065 vf=0.056 ent=0.153 entc=0.0651 kl=+0.825* clip=0.23 upd=33 lr=2.3e-04 pool=2  13.2s
+it  12  N= 9096  pg=+0.021 vf=0.046 ent=0.123 entc=0.0595 kl=+0.681 clip=0.20 upd=72 lr=2.2e-04 pool=2  16.3s
+it  13  N= 7677  pg=+0.032 vf=0.054 ent=0.194 entc=0.0409 kl=+0.509 clip=0.25 upd=60 lr=2.1e-04 pool=2  15.2s
+it  14  N= 7530  pg=+0.037 vf=0.054 ent=0.191 entc=0.0285 kl=+0.455 clip=0.25 upd=60 lr=2.0e-04 pool=2  14.6s
+it  15  N= 9014  pg=+0.038 vf=0.056 ent=0.166 entc=0.0219 kl=+0.412 clip=0.22 upd=72 lr=2.0e-04 pool=3  18.2s  | gate vs best 75.0%(n=120)  [PROMOTED]  | eval: random 87.5%(n=120)
+it  16  N= 7875  pg=+0.027 vf=0.059 ent=0.157 entc=0.0200 kl=+0.390 clip=0.21 upd=62 lr=1.9e-04 pool=3  17.3s
+it  17  N= 9177  pg=+0.022 vf=0.047 ent=0.158 entc=0.0200 kl=+0.234 clip=0.18 upd=72 lr=1.8e-04 pool=3  19.0s
+it  18  N= 7413  pg=+0.025 vf=0.039 ent=0.170 entc=0.0200 kl=+0.320 clip=0.20 upd=58 lr=1.7e-04 pool=3  15.4s
+it  19  N= 8999  pg=+0.015 vf=0.039 ent=0.168 entc=0.0200 kl=+0.190 clip=0.18 upd=72 lr=1.7e-04 pool=3  19.1s
+it  20  N= 8000  pg=+0.014 vf=0.042 ent=0.195 entc=0.0200 kl=+0.157 clip=0.18 upd=64 lr=1.6e-04 pool=4  16.0s  | gate vs best 50.0%(n=120)  | eval: random 85.0%(n=120)
+it  21  N= 8073  pg=+0.016 vf=0.052 ent=0.189 entc=0.0200 kl=+0.137 clip=0.17 upd=64 lr=1.5e-04 pool=4  17.1s
+it  22  N= 8908  pg=+0.023 vf=0.052 ent=0.189 entc=0.0200 kl=+0.197 clip=0.18 upd=70 lr=1.5e-04 pool=4  19.9s
+it  23  N= 7709  pg=+0.013 vf=0.051 ent=0.185 entc=0.0200 kl=+0.139 clip=0.17 upd=62 lr=1.4e-04 pool=4  18.0s
+it  24  N= 7514  pg=+0.010 vf=0.052 ent=0.170 entc=0.0200 kl=+0.179 clip=0.16 upd=60 lr=1.3e-04 pool=4  17.4s
+it  25  N= 7473  pg=+0.013 vf=0.047 ent=0.190 entc=0.0200 kl=+0.098 clip=0.16 upd=60 lr=1.2e-04 pool=4  15.2s  | gate vs best 56.7%(n=120)  [PROMOTED]  | eval: random 92.5%(n=120)
+it  26  N= 7385  pg=+0.008 vf=0.040 ent=0.179 entc=0.0200 kl=+0.086 clip=0.14 upd=58 lr=1.2e-04 pool=4  15.4s
+it  27  N= 7229  pg=+0.019 vf=0.052 ent=0.195 entc=0.0200 kl=+0.095 clip=0.15 upd=58 lr=1.1e-04 pool=4  14.5s
+it  28  N= 8518  pg=+0.012 vf=0.050 ent=0.201 entc=0.0200 kl=+0.063 clip=0.13 upd=68 lr=1.0e-04 pool=4  17.5s
+it  29  N= 8301  pg=+0.008 vf=0.047 ent=0.212 entc=0.0200 kl=+0.076 clip=0.15 upd=66 lr=9.4e-05 pool=4  17.6s
+it  30  N= 8454  pg=+0.002 vf=0.049 ent=0.210 entc=0.0200 kl=+0.061 clip=0.14 upd=68 lr=8.7e-05 pool=4  17.4s  | gate vs best 62.2%(n=119)  [PROMOTED]  | eval: random 95.8%(n=120)
+it  31  N= 8385  pg=+0.011 vf=0.041 ent=0.221 entc=0.0200 kl=+0.043 clip=0.13 upd=66 lr=7.9e-05 pool=4  17.4s
+it  32  N= 9368  pg=+0.006 vf=0.048 ent=0.223 entc=0.0200 kl=+0.039 clip=0.13 upd=74 lr=7.2e-05 pool=4  19.6s
+it  33  N= 8434  pg=+0.003 vf=0.042 ent=0.224 entc=0.0200 kl=+0.030 clip=0.11 upd=66 lr=6.5e-05 pool=4  16.7s
+it  34  N= 8743  pg=+0.002 vf=0.044 ent=0.221 entc=0.0200 kl=+0.027 clip=0.11 upd=70 lr=5.7e-05 pool=4  19.1s
+it  35  N= 7654  pg=+0.003 vf=0.045 ent=0.266 entc=0.0200 kl=+0.030 clip=0.11 upd=60 lr=5.0e-05 pool=4  16.0s  | gate vs best 66.7%(n=120)  [PROMOTED]  | eval: random 98.3%(n=120)
+
+done. best gate vs best = 66.7%  ->  /content/drive/MyDrive/ptcg_outputs/sanity_s2

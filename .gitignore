@@ -1,16 +1,10 @@
-# Generated outputs — caches, downloaded replays/leaderboards, agent logs
-outputs/cache/
-outputs/leaderboard/
-outputs/replays/
-outputs/episodes/
-outputs/discussions/
-outputs/kernels/
-outputs/logs/
-outputs/eval/
-outputs/checkpoints/
-
-# Keep the placeholder
+# Generated outputs — caches, replays, leaderboards, logs, checkpoints, run dirs.
+# Ignore the WHOLE tree: training run dirs (e.g. probe_*/, what download_artifacts.py
+# pulls from Drive) land here and must stay local — checkpoints are large. Keep only the
+# placeholder and the small, already-committed orbit-wars discussion extracts.
+outputs/*
 !outputs/.gitkeep
+!outputs/orbit_wars_discussions/
 
 # Built submission bundles (rebuild from source)
 submissions/

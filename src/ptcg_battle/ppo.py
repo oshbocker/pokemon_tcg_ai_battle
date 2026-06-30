@@ -130,17 +130,31 @@ def _import_engine():
     return to_observation_class, battle_start, battle_select, battle_finish
 
 
+def _load_agent_module(path: Path, mod_name: str):
+    """Import a vendored agent module (main.py or kaggle_agents/<name>.py) fresh."""
+    import importlib.util
+
+    s = importlib.util.spec_from_file_location(mod_name, path)
+    assert s is not None and s.loader is not None
+    mod = importlib.util.module_from_spec(s)
+    s.loader.exec_module(mod)
+    return mod
+
+
 def _make_fixed_opponent(spec: str, deck: list[int], rng: random.Random):
-    """A non-trained opponent policy: 'random', 'first', or 'heuristic'."""
+    """A non-trained, deck-agnostic opponent policy: 'random', 'first', or 'heuristic'.
+
+    Raises on any other spec — callers that need `kaggle:`/`mirror` opponents must use
+    `_resolve_eval_opponent`. (Previously unknown specs silently degraded to the 'first'
+    baseline, which made in-loop eval against `kaggle:`/`mirror` opponents a lie.)"""
     to_oc, _, _, _ = _import_engine()
     if spec == "heuristic":
-        import importlib.util
-
-        s = importlib.util.spec_from_file_location("opp_heur", AGENT_DIR / "main.py")
-        assert s is not None and s.loader is not None
-        mod = importlib.util.module_from_spec(s)
-        s.loader.exec_module(mod)
-        return mod.agent
+        return _load_agent_module(AGENT_DIR / "main.py", "opp_heur").agent
+    if spec not in ("random", "first"):
+        raise ValueError(
+            f"_make_fixed_opponent: unsupported spec {spec!r} "
+            "(use random/first/heuristic; kaggle:/mirror go through _resolve_eval_opponent)"
+        )
 
     def fn(obs_dict):
         oc = to_oc(obs_dict)
@@ -153,6 +167,30 @@ def _make_fixed_opponent(spec: str, deck: list[int], rng: random.Random):
         return rng.sample(range(n), min(k, n)) if spec == "random" else list(range(min(k, n)))
 
     return fn
+
+
+def _resolve_eval_opponent(spec: str, trainee_deck: list[int], rng: random.Random):
+    """Resolve an in-loop eval opponent to ``(agent_fn, opp_deck)``.
+
+    `kaggle:<name>` and `heuristic` pilot **their own** deck (so the matchup is honest);
+    `random`/`first` borrow the trainee deck. Any other spec raises — so an opponent we
+    can't actually run is never silently swapped for the trivial 'first' baseline (the bug
+    that made the first Archaludon probe's `kaggle:archaludon` column meaningless). `mirror`
+    (self-copy) is deliberately unsupported here — use the `gate vs best` self-play signal,
+    or `scripts/eval.py` for a true A/A null."""
+    if spec in ("random", "first"):
+        return _make_fixed_opponent(spec, trainee_deck, rng), trainee_deck
+    if spec == "heuristic":
+        mod = _load_agent_module(AGENT_DIR / "main.py", "opp_heur")
+        return mod.agent, list(mod.my_deck)
+    if spec.startswith("kaggle:"):
+        name = spec[len("kaggle:") :]
+        mod = _load_agent_module(AGENT_DIR / "kaggle_agents" / f"{name}.py", f"opp_{name}")
+        return mod.agent, list(mod.my_deck)
+    raise ValueError(
+        f"quick_eval: unsupported opponent spec {spec!r} "
+        "(use random | first | heuristic | kaggle:<name>)"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -392,13 +430,16 @@ def quick_eval(
     wins = losses = draws = 0
     try:
         to_oc, battle_start, battle_select, battle_finish = _import_engine()
-        opp_fn = _make_fixed_opponent(opponent, deck, rng)
+        opp_fn, opp_deck = _resolve_eval_opponent(opponent, deck, rng)
         for g in range(n_games):
             model_seat = g % 2
+            # Seat the model at model_seat with the trainee deck; the opponent takes the
+            # other seat on ITS OWN deck (kaggle/heuristic) — asymmetric, side-swapped.
+            seat_decks = (deck, opp_deck) if model_seat == 0 else (opp_deck, deck)
             obs = None
             result = None
             try:
-                obs, _ = battle_start(deck, deck)
+                obs, _ = battle_start(seat_decks[0], seat_decks[1])
                 if obs is None:
                     continue
                 for _ in range(max_steps):

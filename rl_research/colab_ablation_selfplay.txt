@@ -1,0 +1,16 @@
+option-rank SELF-PLAY ablation  size=small  seeds=2  iters=80  games/iter=128  W=32  device=cuda
+honest eval n=2000/arm/opp (pooled over seeds), side-swapped, Wilson 95%
+
+  [ON  seed=0] 5.7M (non-emb 5.0M)  league(self=1.0,past=2.0≤4,heur=1.0,rand=0.5)  W=32  iters=80  select=best-vs-random
+    it   5 N= 8637 kl=+0.418 upd=68 ent=0.030 entc=0.0505 vsRand=60% [best]
+    it  10 N= 7455 kl=+0.252 upd=60 ent=0.057 entc=0.1891 vsRand=53%
+    it  15 N= 8110 kl=+0.674 upd=64 ent=0.429 entc=0.0387 vsRand=64% [best]
+    it  20 N= 7254 kl=+0.216 upd=58 ent=0.305 entc=0.0200 vsRand=59%
+    it  25 N= 6875 kl=+0.119 upd=54 ent=0.336 entc=0.0200 vsRand=70% [best]
+    it  30 N= 5778 kl=+0.194 upd=46 ent=0.287 entc=0.0200 vsRand=68%
+    it  35 N= 6579 kl=+0.089 upd=52 ent=0.268 entc=0.0200 vsRand=72% [best]
+    it  40 N= 6395 kl=+0.079 upd=50 ent=0.330 entc=0.0200 vsRand=82% [best]
+    it  45 N= 6033 kl=+0.112 upd=48 ent=0.373 entc=0.0200 vsRand=86% [best]
+    it  50 N= 6452 kl=+0.063 upd=52 ent=0.424 entc=0.0200 vsRand=88% [best]
+    it  55 N= 6412 kl=+0.072 upd=52 ent=0.435 entc=0.0200 vsRand=89% [best]
+    it  60 N= 7174 kl=+0.048 upd=58 ent=0.476 entc=0.0200 vsRand=95% [best]

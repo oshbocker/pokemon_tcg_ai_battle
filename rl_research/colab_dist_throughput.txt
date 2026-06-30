@@ -1,0 +1,6 @@
+W=  8  decisions=  9095       673 dec/s  (13.5s)
+W= 12  decisions= 13719       944 dec/s  (14.5s)
+W= 16  decisions= 17718      1255 dec/s  (14.1s)
+W= 24  decisions= 26266      1855 dec/s  (14.2s)
+W= 32  decisions= 36909      2231 dec/s  (16.5s)
+W= 48  decisions= 52944      2545 dec/s  (20.8s)
