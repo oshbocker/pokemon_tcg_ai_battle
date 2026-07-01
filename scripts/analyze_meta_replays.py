@@ -1,6 +1,12 @@
 """Meta analysis from replays: classify each deck (HP-weighted main attacker),
-then report archetype frequency, per-archetype win rate, and a head-to-head
-matchup matrix. Decks come from steps[1][seat]['action'] (authoritative)."""
+then report archetype prevalence (by seat AND by distinct decklist), per-archetype
+win rate, and a head-to-head matchup matrix. Decks come from steps[1][seat]['action']
+(authoritative).
+
+Two prevalence columns: `seats` is raw appearances (inflated by repeated games — e.g.
+our own cached RL-agent episodes), while `pilots` counts DISTINCT 60-card lists, which
+de-biases repeats and is the truer "how many teams play this" signal. See
+`rl_research/META_DISTRIBUTION_2026-06-30.md`."""
 
 from __future__ import annotations
 
@@ -14,6 +20,12 @@ with open(REPO / "data" / "EN_Card_Data.csv", newline="") as _f:
     CARDS = {r["Card ID"]: r for r in csv.DictReader(_f)}
 STAGE = "Stage (Pokémon)/Type (Energy and Trainer)"
 
+# Abra / Kadabra / Alakazam line. Every deck carrying it is the same physical
+# hand-scaling OHKO combo — the HP-weighted namer otherwise splits it three ways
+# ("Fezandipiti ex" / "Alakazam" / "Dudunsparce") by whichever 1-of ex it latches
+# onto (verified: 100% of those labels carry this line). Merge them into one name.
+ALAKAZAM_LINE = {741, 742, 743}
+
 
 def hp(cid: str) -> int:
     v = CARDS.get(cid, {}).get("HP", "")
@@ -26,6 +38,8 @@ def archetype(ids: list[int]) -> str:
     cnt = collections.Counter(str(x) for x in ids)
     if "345" in cnt:  # Crustle line -> wall/deckout
         return "Crustle"
+    if ALAKAZAM_LINE & set(ids):  # the hand-scaling combo, however the namer sees it
+        return "Alakazam combo"
     pokes = [k for k in cnt if "Pokémon" in CARDS.get(k, {}).get(STAGE, "")]
     exs = [
         k
@@ -51,38 +65,46 @@ def decks_of(path: Path) -> tuple[list[list[int]], list | None]:
 
 def main() -> None:
     paths = sorted((REPO / "outputs" / "replays").glob("episode-*-replay.json"))
-    freq: collections.Counter = collections.Counter()
+    seats: collections.Counter = collections.Counter()  # raw appearances
     wins: collections.Counter = collections.Counter()
-    games: collections.Counter = collections.Counter()
+    decisive: collections.Counter = collections.Counter()  # WR denominator (no draws/errors)
+    pilots: dict[str, set] = collections.defaultdict(set)  # archetype -> {deck fingerprints}
     matchup: dict = collections.defaultdict(lambda: [0, 0])  # (A,B) -> [A_wins, total]
     n_valid = 0
     for p in paths:
         (d0, d1), rw = decks_of(p)
-        if not d0 or not d1 or not rw:
+        if not d0 or not d1:
             continue
         n_valid += 1
         a0, a1 = archetype(d0), archetype(d1)
-        freq[a0] += 1
-        freq[a1] += 1
-        games[a0] += 1
-        games[a1] += 1
+        for a, d in ((a0, d0), (a1, d1)):
+            seats[a] += 1
+            pilots[a].add(tuple(sorted(d)))
+        if not rw or rw[0] is None or rw[1] is None:
+            continue  # errored/incomplete: counted for prevalence, skipped for win stats
         w = 0 if rw[0] > rw[1] else 1 if rw[1] > rw[0] else -1
-        if w == 0:
-            wins[a0] += 1
-        elif w == 1:
-            wins[a1] += 1
-        if a0 != a1 and w >= 0:
+        if w in (0, 1):
+            decisive[a0] += 1
+            decisive[a1] += 1
+            wins[(a0, a1)[w]] += 1
+        if a0 != a1 and w in (0, 1):
             winner, loser = (a0, a1) if w == 0 else (a1, a0)
             matchup[(winner, loser)][0] += 1
             matchup[(winner, loser)][1] += 1
             matchup[(loser, winner)][1] += 1
 
-    print(f"=== {n_valid} valid replays ===\n")
-    print("ARCHETYPE         seats   games   wins   WR%")
-    for a, f in freq.most_common():
-        g = games[a]
-        wr = 100 * wins[a] / g if g else 0
-        print(f"  {a:<22} {f:>3}   {g:>4}   {wins[a]:>4}   {wr:4.0f}")
+    tot_seats = sum(seats.values())
+    tot_pilots = sum(len(v) for v in pilots.values())
+    print(
+        f"=== {n_valid} valid replays  ({tot_seats} seats, {tot_pilots} distinct decklists) ===\n"
+    )
+    print("ARCHETYPE                    seats  seat%   pilots  pilot%    WR%")
+    for a, pset in sorted(pilots.items(), key=lambda kv: -len(kv[1])):
+        s, pil, d = seats[a], len(pset), decisive[a]
+        wr = 100 * wins[a] / d if d else 0
+        print(
+            f"  {a:<26} {s:>4}  {100 * s / tot_seats:4.0f}   {pil:>5}  {100 * pil / tot_pilots:5.0f}   {wr:5.0f}"
+        )
 
     print("\n=== matchups (winner beats loser: wins/total) ===")
     seen = set()

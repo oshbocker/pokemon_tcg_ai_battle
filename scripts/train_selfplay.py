@@ -50,9 +50,26 @@ def _lerp(a: float, b: float, frac: float) -> float:
     return a + (b - a) * frac
 
 
+def _load_ckpt_net(path: Path, device: str) -> PtcgNet:
+    """Load a frozen ``{model, cfg}`` checkpoint into an eval-mode, grad-free net.
+
+    Mirrors the loader in `eval_harness._build_model_agent`; used for external
+    `--league-checkpoint` opponents (any size — the net is built from its own cfg)."""
+    ckpt = torch.load(path, map_location=device, weights_only=False)
+    cfg = ModelConfig(**ckpt["cfg"]) if isinstance(ckpt.get("cfg"), dict) else ModelConfig()
+    net = PtcgNet(cfg).to(device).eval()
+    net.load_state_dict(ckpt["model"])
+    for p in net.parameters():
+        p.requires_grad_(False)
+    return net
+
+
 def _short(spec: str) -> str:
-    """Human label for a league spec (drop the ``kaggle:`` prefix)."""
-    return spec[len("kaggle:") :] if spec.startswith("kaggle:") else spec
+    """Human label for a league spec (drop the ``kaggle:``/``model:`` prefix)."""
+    for pre in ("kaggle:", "model:"):
+        if spec.startswith(pre):
+            return spec[len(pre) :]
+    return spec
 
 
 def gate_pool_score(
@@ -68,6 +85,8 @@ def gate_pool_score(
     w_self: float,
     w_past: float,
     past_sample: int,
+    ext_models: dict[str, PtcgNet] | None = None,
+    ext_decks: dict[str, list[int]] | None = None,
 ) -> tuple[float, list[tuple[str, float, float]]]:
     """Weighted pool win-rate of ``model`` across the training league.
 
@@ -98,8 +117,23 @@ def gate_pool_score(
         parts.append(("past", sum(past_valid) / len(past_valid), w_past))
 
     # fixed agents from the manifest (or flag fallback): each pilots its own deck.
+    # A `model:<id>` entry is an external frozen checkpoint (e.g. the trained
+    # Archaludon best.pt in the Alakazam league) — score it via an asymmetric
+    # `play_match` on ITS deck; everything else runs through `quick_eval`.
     for spec, w in fixed_opps:
-        r = quick_eval(model, deck, spec, games, device=device, seed=seed)
+        if spec.startswith("model:"):
+            mid = spec[len("model:") :]
+            r = play_match(
+                model,
+                (ext_models or {})[mid],
+                deck,
+                games,
+                device=device,
+                seed=seed,
+                deck_b=(ext_decks or {}).get(spec),
+            )
+        else:
+            r = quick_eval(model, deck, spec, games, device=device, seed=seed)
         parts.append((_short(spec), r["winrate"], w))
 
     num = sum(w * wr for _, wr, w in parts if wr == wr)
@@ -172,6 +206,18 @@ def main() -> int:
         "Empty string disables (fall back to the --w-heuristic/--w-random/--league-kaggle flags).",
     )
     ap.add_argument(
+        "--league-checkpoint",
+        action="append",
+        default=None,
+        metavar="PATH:WEIGHT[:DECK_CSV[:LABEL]]",
+        help="external frozen checkpoint as a league opponent (e.g. the trained "
+        "Archaludon best.pt in the Alakazam league). PATH is a {model,cfg} .pt; WEIGHT "
+        "is its sampling weight (keep LOW to avoid over-exposing a weak trainee); DECK_CSV "
+        "is the deck it pilots (default: mirror the trainee); LABEL names it in the gate "
+        "breakdown (default: the checkpoint's run-dir name). Added to BOTH the training "
+        "league and the pool gate; never evicted from the pool. Repeatable.",
+    )
+    ap.add_argument(
         "--gate", action="store_true", help="promote best.pt by gating vs frozen last-best"
     )
     ap.add_argument(
@@ -239,6 +285,29 @@ def main() -> int:
         from ptcg_battle.opponents import load_manifest, manifest_to_league_args
 
         manifest_extra, manifest_decks = manifest_to_league_args(load_manifest(a.opp_manifest))
+
+    # External frozen checkpoints as league opponents (--league-checkpoint). Each is
+    # merged into the league's model set (never evicted) and added to the manifest mix
+    # + gate as a `model:<label>` opponent piloting its own deck.
+    ext_models: dict[str, PtcgNet] = {}
+    if use_league and a.league_checkpoint:
+        from ptcg_battle.opponents import read_deck
+
+        for entry in a.league_checkpoint:
+            fields = entry.split(":")
+            ckpt_path, weight = fields[0], float(fields[1])
+            deck_csv = fields[2] if len(fields) > 2 and fields[2] else None
+            label = (
+                fields[3]
+                if len(fields) > 3 and fields[3]
+                else (Path(ckpt_path).parent.name or Path(ckpt_path).stem)
+            )
+            spec = f"model:{label}"
+            ext_models[label] = _load_ckpt_net(Path(ckpt_path), a.device)
+            manifest_extra.append((spec, weight))
+            if deck_csv:
+                manifest_decks[spec] = read_deck(deck_csv)
+
     manifest_on = bool(manifest_extra)
     lw_heuristic = 0.0 if manifest_on else a.w_heuristic
     lw_random = 0.0 if manifest_on else a.w_random
@@ -356,6 +425,7 @@ def main() -> int:
                     w_kaggle=a.w_kaggle,
                     extra=manifest_extra,
                     opp_decks=manifest_decks,
+                    ext_models=ext_models,
                 )
 
             t0 = time.time()
@@ -420,6 +490,8 @@ def main() -> int:
                         w_self=a.w_self,
                         w_past=a.w_past,
                         past_sample=a.gate_past,
+                        ext_models=ext_models,
+                        ext_decks=manifest_decks,
                     )
                     breakdown = " | ".join(
                         f"{lbl} {wr * 100:.0f}" for lbl, wr, _w in parts if wr == wr

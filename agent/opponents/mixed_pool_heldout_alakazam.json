@@ -1,0 +1,11 @@
+{
+  "_comment": "Held-out variant of mixed_pool.json for the Alakazam self-play run (2026-06-30). Mirrors mixed_pool_heldout_archaludon.json's methodology, but for the Alakazam B agent (combo aggro, ladder's #1 deck per rl_research/META_DISTRIBUTION_2026-06-30.md). kaggle:alakazam is DELIBERATELY REMOVED so the hand-coded Alakazam rule agent is a clean, deck-controlled held-out yardstick in --eval-opponents: the Alakazam trainee learns its deck via self/past mirrors + cross-archetype pressure here, then is evaluated vs the rule agent it NEVER trained against (beating it >50% = self-play surpassed the matched heuristic). kaggle:archaludon (the RULE agent) is back IN the pool since Archaludon is no longer the trainee. The TRAINED Archaludon best.pt is added SEPARATELY at a low weight via --league-checkpoint (not here) so it can pilot its own deck as a model: opponent and be capped to ~5% of games — enough robustness signal against our best vendored agent without burying a weak early Alakazam (see rl_research/POOL_GATE_2026-06-30.md 'Future ideas'). Do NOT add kaggle:alakazam back to this file.",
+  "opponents": [
+    { "agent": "kaggle:archaludon",     "weight": 1.5 },
+    { "agent": "kaggle:starmie",        "weight": 1.5 },
+    { "agent": "kaggle:dragapult",      "weight": 1.5 },
+    { "agent": "kaggle:romanrozen_v10", "weight": 1.0 },
+    { "agent": "heuristic",             "weight": 0.5 },
+    { "agent": "random",                "weight": 0.3 }
+  ]
+}

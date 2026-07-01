@@ -491,12 +491,19 @@ def play_match(
     device: str = "cpu",
     seed: int = 777,
     max_steps: int = 4000,
+    deck_b: list[int] | None = None,
 ) -> dict:
     """`model_a` vs `model_b`, greedy, side-swapped. Returns A's win/loss/draw.
 
     The engine for best-checkpoint gating (P3.3): play the trainee against a frozen
     opponent and promote on a high-n win rate. Side-swap (A on seat 0 for even
-    games, seat 1 for odd) cancels the first-player bias the engine has."""
+    games, seat 1 for odd) cancels the first-player bias the engine has.
+
+    `deck_b` (default: mirror `deck`) lets B pilot its own deck — the asymmetric
+    match the pool gate needs to score the trainee against an external `model:`
+    checkpoint (e.g. the trained Archaludon best.pt in the Alakazam league) that
+    plays a *different* 60-card list."""
+    b_deck = deck if deck_b is None else deck_b
     model_a.eval()
     model_b.eval()
     gen = torch.Generator().manual_seed(seed)
@@ -507,10 +514,12 @@ def play_match(
         to_oc, battle_start, battle_select, battle_finish = _import_engine()
         for g in range(n_games):
             a_seat = g % 2
+            # Side-swap: A on seat 0 for even games, seat 1 for odd. B pilots b_deck.
+            seat_decks = (deck, b_deck) if a_seat == 0 else (b_deck, deck)
             obs = None
             result = None
             try:
-                obs, _ = battle_start(deck, deck)
+                obs, _ = battle_start(seat_decks[0], seat_decks[1])
                 if obs is None:
                     continue
                 for _ in range(max_steps):

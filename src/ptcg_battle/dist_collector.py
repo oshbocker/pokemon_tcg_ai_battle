@@ -107,6 +107,7 @@ def build_league(
     w_kaggle: float = 1.0,
     extra: list[tuple[str, float]] | None = None,
     opp_decks: dict[str, list[int]] | None = None,
+    ext_models: dict[str, PtcgNet] | None = None,
 ) -> League:
     """Assemble a `League` from the current past-checkpoint `pool` + fixed agents.
 
@@ -117,7 +118,14 @@ def build_league(
     `extra` is the manifest-driven opponent set — additional `(spec, weight)` pairs
     (e.g. `("kaggle:archaludon", 1.0)`, `("heuristic", 0.5)`) that, with `opp_decks`
     (spec → that opponent's own deck), make the league a mixed, asymmetric pool. It
-    coexists with the legacy single-`kaggle` flag; both feed the same `decks` map."""
+    coexists with the legacy single-`kaggle` flag; both feed the same `decks` map.
+
+    `ext_models` are *external* frozen checkpoints (id → net) — e.g. a trained
+    Archaludon `best.pt` dropped into the Alakazam league. Unlike the trainee's own
+    `pool` snapshots (which mirror the trainee deck and get evicted), these are
+    never evicted and pilot their own deck (supplied via `extra`/`opp_decks` as a
+    `("model:<id>", weight)` entry). They are merged into `League.models` so the
+    central GPU loop resolves them by id, exactly like a past-self checkpoint."""
     mix: list[tuple[str, float]] = [("self", w_self)]
     if pool and w_past > 0:
         per = w_past / len(pool)
@@ -135,7 +143,8 @@ def build_league(
     # to pure self-play rather than crash collect() with a cryptic ValueError.
     if sum(w for _, w in mix) <= 0:
         mix = [("self", 1.0)]
-    return League(mix=mix, models=pool, decks=dict(opp_decks or {}))
+    models = pool if not ext_models else {**pool, **ext_models}
+    return League(mix=mix, models=models, decks=dict(opp_decks or {}))
 
 
 class DistributedCollector:

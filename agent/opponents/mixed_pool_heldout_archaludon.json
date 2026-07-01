@@ -3,6 +3,7 @@
   "opponents": [
     { "agent": "kaggle:starmie",        "weight": 1.5 },
     { "agent": "kaggle:dragapult",      "weight": 1.5 },
+    { "agent": "kaggle:alakazam",       "weight": 1.5 },
     { "agent": "kaggle:romanrozen_v10", "weight": 1.0 },
     { "agent": "heuristic",             "weight": 0.5 },
     { "agent": "random",                "weight": 0.3 }
