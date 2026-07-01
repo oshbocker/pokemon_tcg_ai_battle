@@ -1,0 +1,38 @@
+warm-start init from outputs/probe_archaludon_medium_long/best.pt  cfg=d384/L8 option_rank=True  parent={'gate_wr': 0.655, 'iter': 850}
+       load_state_dict(strict=False): missing=[] unexpected=[]
+train  size=medium(15.8M, non-emb 14.7M)  option_rank=True  opponent=self  deck=archaludon_judge_swap.csv  device=cpu
+       iters=30 games/iter=48 epochs=2 mb=256 lr=3e-05->1e-05 ent~target=0.1(adaptive) kl_cut=1.5 gamma=0.997
+       collector=dist(W=7)  league: self=1.0 past=2.0(≤4) + manifest[kaggle:archaludon=1.5, kaggle:starmie=1.5, kaggle:dragapult=1.5, kaggle:alakazam=1.5, kaggle:romanrozen_v10=1, heuristic=0.5, random=0.3]  gate[pool|floor>55%]/30g every 10 vs self, past, archaludon, starmie, dragapult, alakazam, romanrozen_v10, heuristic, random
+
+it   1  N= 3151  pg=-0.009 vf=0.065 ent=0.821 entc=0.0200 kl=+0.007 clip=0.06 upd=26 lr=3.0e-05 pool=1  190.5s
+it   2  N= 2664  pg=-0.011 vf=0.077 ent=0.859 entc=0.0200 kl=+0.006 clip=0.03 upd=22 lr=2.9e-05 pool=1  194.0s
+it   3  N= 3188  pg=-0.007 vf=0.062 ent=0.848 entc=0.0200 kl=+0.004 clip=0.03 upd=26 lr=2.9e-05 pool=1  216.5s
+it   4  N= 2987  pg=-0.009 vf=0.064 ent=0.840 entc=0.0200 kl=+0.004 clip=0.03 upd=24 lr=2.8e-05 pool=1  227.9s
+it   5  N= 3306  pg=-0.009 vf=0.067 ent=0.839 entc=0.0200 kl=+0.005 clip=0.04 upd=26 lr=2.7e-05 pool=2  229.9s
+it   6  N= 3075  pg=+0.036 vf=0.059 ent=0.894 entc=0.0200 kl=+0.009 clip=0.04 upd=26 lr=2.7e-05 pool=2  228.1s
+it   7  N= 3606  pg=-0.004 vf=0.062 ent=0.847 entc=0.0200 kl=+0.005 clip=0.05 upd=30 lr=2.6e-05 pool=2  253.0s
+it   8  N= 3028  pg=-0.009 vf=0.053 ent=0.862 entc=0.0200 kl=+0.006 clip=0.04 upd=24 lr=2.5e-05 pool=2  211.7s
+it   9  N= 3327  pg=-0.008 vf=0.058 ent=0.803 entc=0.0200 kl=+0.004 clip=0.03 upd=26 lr=2.4e-05 pool=2  235.5s
+it  10  N= 3158  pg=-0.006 vf=0.057 ent=0.866 entc=0.0200 kl=+0.001 clip=0.03 upd=26 lr=2.4e-05 pool=3  207.2s  | gate pool 63.4% [self 43 | past 47 | archaludon 57 | starmie 93 | dragapult 70 | alakazam 50 | romanrozen_v10 73 | heuristic 80 | random 100]  [PROMOTED]  | eval: random 100.0%(n=80)  | mix: parent 4g/50%  starmie 7g/100%  alakazam 10g/70%  dragapult 8g/62%  archaludon 7g/57%  heuristic 1g/100%  self 5g/100%  it5 5g/80%  romanrozen_v10 1g/0%
+it  11  N= 2877  pg=-0.012 vf=0.066 ent=0.834 entc=0.0200 kl=+0.002 clip=0.02 upd=24 lr=2.3e-05 pool=3  196.6s
+it  12  N= 3220  pg=-0.005 vf=0.064 ent=0.789 entc=0.0200 kl=+0.005 clip=0.03 upd=26 lr=2.2e-05 pool=3  203.8s
+it  13  N= 2737  pg=-0.004 vf=0.058 ent=0.833 entc=0.0200 kl=+0.003 clip=0.04 upd=22 lr=2.2e-05 pool=3  196.6s
+it  14  N= 3735  pg=-0.006 vf=0.068 ent=0.858 entc=0.0200 kl=+0.004 clip=0.03 upd=30 lr=2.1e-05 pool=3  247.3s
+it  15  N= 2853  pg=-0.014 vf=0.069 ent=0.841 entc=0.0200 kl=+0.003 clip=0.02 upd=24 lr=2.0e-05 pool=4  211.1s
+it  16  N= 3061  pg=-0.007 vf=0.057 ent=0.874 entc=0.0200 kl=+0.003 clip=0.03 upd=24 lr=2.0e-05 pool=4  227.1s
+it  17  N= 3359  pg=+0.005 vf=0.057 ent=0.821 entc=0.0200 kl=+0.005 clip=0.02 upd=28 lr=1.9e-05 pool=4  268.6s
+it  18  N= 3246  pg=-0.005 vf=0.065 ent=0.843 entc=0.0200 kl=+0.005 clip=0.03 upd=26 lr=1.8e-05 pool=4  260.1s
+it  19  N= 3346  pg=-0.021 vf=0.060 ent=0.847 entc=0.0200 kl=+0.006 clip=0.03 upd=28 lr=1.8e-05 pool=4  273.9s
+it  20  N= 2701  pg=-0.011 vf=0.065 ent=0.858 entc=0.0200 kl=+0.000 clip=0.01 upd=22 lr=1.7e-05 pool=4  200.9s  | gate pool 67.9% [self 43 | past 53 | archaludon 67 | starmie 90 | dragapult 60 | alakazam 63 | romanrozen_v10 87 | heuristic 93 | random 100]  [PROMOTED]  | eval: random 100.0%(n=80)  | mix: starmie 11g/45%  dragapult 8g/62%  random 2g/100%  alakazam 9g/33%  archaludon 5g/80%  heuristic 4g/75%  parent 2g/100%  it10 1g/100%  self 2g/100%  it5 1g/0%  romanrozen_v10 2g/50%  it15 1g/0%
+it  21  N= 2638  pg=-0.006 vf=0.054 ent=0.843 entc=0.0200 kl=+0.001 clip=0.02 upd=22 lr=1.6e-05 pool=4  199.4s
+it  22  N= 2983  pg=-0.005 vf=0.058 ent=0.897 entc=0.0200 kl=+0.003 clip=0.02 upd=24 lr=1.6e-05 pool=4  235.1s
+it  23  N= 3296  pg=-0.005 vf=0.046 ent=0.865 entc=0.0200 kl=+0.003 clip=0.01 upd=26 lr=1.5e-05 pool=4  244.8s
+it  24  N= 2838  pg=-0.016 vf=0.049 ent=0.860 entc=0.0200 kl=+0.011 clip=0.03 upd=24 lr=1.4e-05 pool=4  203.1s
+it  25  N= 2904  pg=-0.012 vf=0.061 ent=0.843 entc=0.0200 kl=-0.000 clip=0.01 upd=24 lr=1.3e-05 pool=4  226.1s
+it  26  N= 3311  pg=-0.005 vf=0.075 ent=0.846 entc=0.0200 kl=+0.003 clip=0.02 upd=26 lr=1.3e-05 pool=4  263.1s
+it  27  N= 3340  pg=-0.016 vf=0.065 ent=0.837 entc=0.0200 kl=+0.000 clip=0.01 upd=28 lr=1.2e-05 pool=4  254.1s
+it  28  N= 3115  pg=-0.007 vf=0.062 ent=0.830 entc=0.0200 kl=+0.001 clip=0.01 upd=26 lr=1.1e-05 pool=4  232.6s
+it  29  N= 3026  pg=-0.003 vf=0.062 ent=0.835 entc=0.0200 kl=+0.001 clip=0.01 upd=24 lr=1.1e-05 pool=4  206.3s
+it  30  N= 3203  pg=-0.005 vf=0.068 ent=0.832 entc=0.0200 kl=+0.001 clip=0.01 upd=26 lr=1.0e-05 pool=4  236.2s  | gate pool 68.5% [self 67 | past 43 | archaludon 77 | starmie 83 | dragapult 73 | alakazam 60 | romanrozen_v10 73 | heuristic 87 | random 100]  [PROMOTED]  | eval: random 100.0%(n=80)  | mix: random 1g/100%  dragapult 6g/50%  romanrozen_v10 4g/100%  alakazam 8g/50%  starmie 6g/83%  archaludon 5g/40%  heuristic 3g/67%  it25 3g/67%  self 8g/62%  it20 1g/100%  it15 2g/50%  it10 1g/0%
+
+done. best gate pool = 68.5%  ->  outputs/coevo_kill/warm

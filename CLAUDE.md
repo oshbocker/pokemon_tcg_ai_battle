@@ -12,6 +12,28 @@ ladder. Companion Hackathon/Strategy track:
 (re-pull with `scripts/kaggle_tool.py pages --save`). Patterned after the
 `orbit_wars` repo.
 
+## Strategy Category (where the prize money is)
+
+The Simulation ladder is the leaderboard we tune agents against, but the
+**Strategy Category** holds the money: **$240k total, 8 finalists × $30k**
+(possible Tokyo tournament). Entering it requires competing in Simulation on an
+identical team. The deliverable is a **single ≤2000-word Kaggle Writeup**
+(hackathon — one submission only). Judged **70% Model / 20% Deck / 10% Report**;
+robustness (consistency across matches, low reliance on luck/matchups) is
+weighted heavily, and **leaderboard rank alone does not guarantee a good score**
+— depth of analysis and reasoning do.
+
+**As we build agents, record strategy notes as we go** in
+`rl_research/STRATEGY_WRITEUP_LOG.md` — a living, dated log of decisions,
+hypotheses tested, and lessons (including dead-ends). It exists so the final
+writeup is a synthesis of real notes, not a scramble. Append to it whenever the
+approach or deck strategy shifts.
+
+**Timeline:** Sim final submission **Aug 16 2026** (leaderboard converges
+~Aug 31); **Strategy writeup deadline Sept 13 2026**, judging Sept 14 – Oct 11.
+No advantage to submitting the writeup early (one-shot, judged after deadline) —
+write it against the *final* agent/leaderboard and submit near Sept 13.
+
 ## Environment
 
 Always run Python through `uv` locally (never bare `python`/`python3`):

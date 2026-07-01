@@ -1,0 +1,11 @@
+{
+  "_comment": "Alakazam-hardened Archaludon trainer manifest (2026-07-01). Successor to mixed_pool_heldout_archaludon.json for the WARM-START resume run. Motivation: the shipped Archaludon (LB 1047) trained against the heuristic kaggle:alakazam @1.5 with PFSP, yet still went 2-11 (15%) vs Alakazam combo on the live ladder (rl_research/STRATEGY_WRITEUP_LOG.md 2026-07-01 replay audit) — because the hand-coded Alakazam rule agent is far weaker than the real Alakazam decks it meets (many are strong human pilots / our own RL Alakazam). Fix = harder Alakazam sparring: (a) bump the heuristic kaggle:alakazam exploiter 1.5->2.0, AND (b) add the TRAINED Alakazam RL best.pt SEPARATELY via --league-checkpoint at weight 2.0 (it can't live in a manifest — model: specs are trainer-managed; it pilots agent/kaggle_agents/alakazam_deck.csv). Combined Alakazam-archetype pressure ~4.0 is the dominant fixed bucket, on purpose: it is both the #1 meta deck and our worst matchup. kaggle:archaludon stays DELIBERATELY held OUT so the hand-coded Archaludon remains a clean, never-trained-against eval yardstick in --eval-opponents (>50% = self-play surpassed the matched heuristic). PFSP (var) further modulates live. Do NOT add kaggle:archaludon here. Known follow-up gap NOT addressed here: Marnie's Grimmsnarl (0-3 on ladder) is absent from the pool entirely.",
+  "opponents": [
+    { "agent": "kaggle:alakazam",       "weight": 2.0 },
+    { "agent": "kaggle:starmie",        "weight": 1.5 },
+    { "agent": "kaggle:dragapult",      "weight": 1.5 },
+    { "agent": "kaggle:romanrozen_v10", "weight": 1.0 },
+    { "agent": "heuristic",             "weight": 0.5 },
+    { "agent": "random",                "weight": 0.3 }
+  ]
+}
