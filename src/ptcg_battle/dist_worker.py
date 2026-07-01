@@ -162,4 +162,6 @@ def worker_main(wid, fixed_specs, deck_self, max_steps, task_q, req_q, resp_q): 
             if obs is not None:
                 with contextlib.suppress(Exception):
                     battle_finish()
-        req_q.put((DONE, wid, result))
+        # Report the opponent + the learner's seat so the collector can tally per-
+        # opponent outcomes (realized training share, win-rate, and forfeits).
+        req_q.put((DONE, wid, result, opp_spec, model_seat))

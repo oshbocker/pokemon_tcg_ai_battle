@@ -72,6 +72,38 @@ def _short(spec: str) -> str:
     return spec
 
 
+def pfsp_weights(
+    base: list[tuple[str, float]],
+    wr_ema: dict[str, float],
+    *,
+    mode: str,
+    hard_p: float,
+    wmin: float,
+    wmax: float,
+) -> list[tuple[str, float]]:
+    """Re-weight the manifest opponents by the learner's smoothed win-rate `p`.
+
+    Each base weight is scaled by a multiplier in ``[wmin, wmax]`` from a priority fn:
+      * ``var``  → ``4p(1-p)`` (peaks at p=0.5): concentrate on *contested* matchups —
+        naturally floors both the solved (p→1) and the hopeless (p→0), which is why it
+        beats raw inverse-win-rate (that dumps compute into unwinnable games);
+      * ``hard`` → ``(1-p)^k`` (peaks at p=0): concentrate on what you're losing to.
+
+    ``f`` is normalized to peak at 1, so the multiplier spans exactly ``[wmin, wmax]``;
+    ``wmin > 0`` is a floor so no opponent is ever abandoned (anti-forgetting). An
+    opponent with no win-rate estimate yet (unseen/undecided) keeps its base weight."""
+    out: list[tuple[str, float]] = []
+    for spec, w0 in base:
+        p = wr_ema.get(spec)
+        if p is None:
+            out.append((spec, w0))
+            continue
+        f = 4.0 * p * (1.0 - p) if mode == "var" else (1.0 - p) ** hard_p
+        mult = wmin + (wmax - wmin) * max(0.0, min(1.0, f))
+        out.append((spec, w0 * mult))
+    return out
+
+
 def gate_pool_score(
     model: PtcgNet,
     frozen_best: PtcgNet,
@@ -199,6 +231,43 @@ def main() -> int:
     ap.add_argument("--w-random", type=float, default=0.5)
     ap.add_argument("--league-kaggle", default=None, help="kaggle_agents/<name> to add to the pool")
     ap.add_argument("--w-kaggle", type=float, default=1.0)
+    # P3.4 prioritized opponent sampling (PFSP). After a warmup, re-weight the manifest
+    # opponents by the learner's live win-rate so games concentrate where they teach the
+    # most. self/past weights are never touched (mirror dynamics are a separate thing).
+    ap.add_argument(
+        "--pfsp",
+        action="store_true",
+        help="prioritized fictitious self-play: re-weight manifest opponents by live win-rate",
+    )
+    ap.add_argument(
+        "--pfsp-after",
+        type=int,
+        default=150,
+        help="warmup iters of static weights before PFSP activates (let the agent get competent first)",
+    )
+    ap.add_argument(
+        "--pfsp-mode",
+        default="var",
+        choices=["var", "hard"],
+        help="var: f=4p(1-p), peak weight on contested ~50%% matchups (starves both solved "
+        "AND hopeless ones); hard: f=(1-p)^k, peak on the opponents you lose to most",
+    )
+    ap.add_argument(
+        "--pfsp-hard-p", type=float, default=2.0, help="exponent k for --pfsp-mode hard"
+    )
+    ap.add_argument(
+        "--pfsp-wmin",
+        type=float,
+        default=0.25,
+        help="min weight multiplier — a floor that keeps every opponent alive (anti-forgetting)",
+    )
+    ap.add_argument("--pfsp-wmax", type=float, default=4.0, help="max weight multiplier")
+    ap.add_argument(
+        "--pfsp-ema",
+        type=float,
+        default=0.8,
+        help="EMA decay for per-opponent win-rate (higher = smoother/slower to react)",
+    )
     ap.add_argument(
         "--opp-manifest",
         default="agent/opponents/mixed_pool.json",
@@ -374,6 +443,11 @@ def main() -> int:
         )
     else:
         opp_desc = ""
+    if use_league and a.pfsp:
+        opp_desc += (
+            f"\n       pfsp[{a.pfsp_mode}] after it{a.pfsp_after} "
+            f"mult[{a.pfsp_wmin:g},{a.pfsp_wmax:g}] ema={a.pfsp_ema:g}"
+        )
     print(
         f"train  size={a.size}({total / 1e6:.1f}M, non-emb {nonemb / 1e6:.1f}M)  "
         f"option_rank={cfg.use_option_rank}  opponent={a.opponent}  deck={deck_name}  "
@@ -405,6 +479,7 @@ def main() -> int:
     )
     best = -1.0
     best_pool = -1.0  # last-promoted checkpoint's weighted pool score (relative gate)
+    opp_wr_ema: dict[str, float] = {}  # smoothed learner win-rate per opponent (drives PFSP)
     try:
         for it in range(1, a.iters + 1):
             frac = (it - 1) / max(1, a.iters - 1)
@@ -415,6 +490,18 @@ def main() -> int:
                 ppo_cfg.ent_coef = _lerp(a.ent_coef, ent_final, frac)
 
             if use_league:  # rebuild the league each iter against the current pool
+                # PFSP: after warmup, re-weight manifest opponents by live win-rate
+                # (self/past stay flag-driven). Uses last iter's EMA (a one-iter lag).
+                extra = manifest_extra
+                if a.pfsp and it > a.pfsp_after:
+                    extra = pfsp_weights(
+                        manifest_extra,
+                        opp_wr_ema,
+                        mode=a.pfsp_mode,
+                        hard_p=a.pfsp_hard_p,
+                        wmin=a.pfsp_wmin,
+                        wmax=a.pfsp_wmax,
+                    )
                 league = build_league(
                     pool,
                     w_self=a.w_self,
@@ -423,7 +510,7 @@ def main() -> int:
                     w_random=lw_random,
                     kaggle=lkaggle,
                     w_kaggle=a.w_kaggle,
-                    extra=manifest_extra,
+                    extra=extra,
                     opp_decks=manifest_decks,
                     ext_models=ext_models,
                 )
@@ -450,6 +537,17 @@ def main() -> int:
                     device=a.device,
                     seed=a.seed + it,
                 )
+            # Update the smoothed per-opponent win-rate that drives PFSP. Tracked
+            # always (cheap, and shows in the mix log); only consumed when --pfsp is on.
+            if collector is not None:
+                for spec, s in collector.last_opp_stats.items():
+                    if s.decided > 0:
+                        wr = s.win_rate
+                        opp_wr_ema[spec] = (
+                            wr
+                            if spec not in opp_wr_ema
+                            else a.pfsp_ema * opp_wr_ema[spec] + (1.0 - a.pfsp_ema) * wr
+                        )
             m = ppo_update(model, opt, buf, ppo_cfg, device=a.device)
             if adaptive_ent:  # hold mean entropy at the setpoint by tuning ent_coef
                 ppo_cfg.ent_coef = adapt_ent_coef(
@@ -559,6 +657,22 @@ def main() -> int:
                             a.out / "best.pt",
                         )
                         line += f"  [saved best={best * 100:.1f}%]"
+
+            # P3.4 observability: the realized opponent mix (games played + learner
+            # win% per opponent) verifies each opponent's nominal weight buys the
+            # training exposure it claims. FORFEIT is always surfaced — a nonzero
+            # count means games (and gradient) were silently thrown away.
+            if collector is not None and collector.last_opp_stats:
+                forfeits = sum(s.forfeits for s in collector.last_opp_stats.values())
+                if forfeits:
+                    line += f"  FORFEIT={forfeits}"
+                if it % a.eval_every == 0 or it == a.iters:
+                    mix = "  ".join(
+                        f"{_short(spec)} {s.games}g/"
+                        + (f"{s.win_rate * 100:.0f}%" if s.win_rate == s.win_rate else "--")
+                        for spec, s in collector.last_opp_stats.items()
+                    )
+                    line += "  | mix: " + mix
             print(line, flush=True)
     finally:
         if collector is not None:

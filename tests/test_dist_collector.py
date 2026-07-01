@@ -125,6 +125,29 @@ def test_dist_collector_league_mix():
     _assert_valid_buffer(buf)
 
 
+def test_dist_collector_tracks_opp_stats():
+    """collect() tallies per-opponent outcomes in `last_opp_stats`: every game is
+    attributed to exactly one opponent spec, and the win/draw/loss/forfeit counts add
+    up to games (the observability the PFSP re-weighting reads from)."""
+    from ptcg_battle.dist_collector import League
+
+    torch.manual_seed(0)
+    model = PtcgNet(TINY)
+    deck = load_deck()
+    league = League(mix=[("self", 1.0), ("random", 1.0)])
+    n_games = 8
+    with DistributedCollector(deck, n_workers=2, fixed_specs=["random"]) as col:
+        col.collect(model, n_games=n_games, league=league, device="cpu", seed=5)
+    stats = col.last_opp_stats
+    assert set(stats).issubset({"self", "random"})
+    assert sum(s.games for s in stats.values()) == n_games
+    for s in stats.values():
+        assert s.wins + s.draws + s.losses + s.forfeits == s.games
+        assert s.decided == s.wins + s.draws + s.losses
+        if s.decided:
+            assert 0.0 <= s.win_rate <= 1.0
+
+
 def test_dist_collector_fixed_opponent_one_seat():
     """Against a fixed opponent only the model seat is buffered; the buffer is still
     valid and non-empty."""

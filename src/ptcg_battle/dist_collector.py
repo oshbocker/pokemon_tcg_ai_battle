@@ -66,6 +66,34 @@ class League:
         return [s for s, _ in self.mix if s != "self" and not s.startswith("model:")]
 
 
+@dataclass
+class OppStats:
+    """Per-opponent tally of the learner's outcomes over one ``collect()`` call.
+
+    The learner sits at ``model_seat``; ``win_rate`` scores draws as 0.5 over the
+    *decided* games. ``forfeits`` are games that returned no result (an agent crashed
+    or the game aborted) — their trajectories are discarded, so they contribute **no
+    gradient**. A nonzero forfeit count is the signal that an opponent's nominal
+    weight is silently buying less training (and less gradient) than it claims — the
+    exact silent-degradation path that was previously invisible in the logs."""
+
+    games: int = 0
+    wins: int = 0
+    draws: int = 0
+    losses: int = 0
+    forfeits: int = 0
+
+    @property
+    def decided(self) -> int:
+        return self.wins + self.draws + self.losses
+
+    @property
+    def win_rate(self) -> float:
+        """Learner expected score over decided games (draw=0.5); NaN if none decided."""
+        d = self.decided
+        return (self.wins + 0.5 * self.draws) / d if d else float("nan")
+
+
 _SELF_PLAY = League()
 
 
@@ -189,6 +217,10 @@ class DistributedCollector:
             p.start()
             self._procs.append(p)
         self._closed = False
+        # Realized opponent mix of the most recent collect() — spec -> OppStats. The
+        # orchestrator reads this to log the mix, alarm on forfeits, and (P3.4) drive
+        # prioritized opponent re-weighting from live win-rates.
+        self.last_opp_stats: dict[str, OppStats] = {}
 
     def collect(
         self,
@@ -226,6 +258,7 @@ class DistributedCollector:
         # ("cur") decisions are buffered; frozen-opponent decisions are inference-only.
         traj: list[dict[int, list[TrajStep]]] = [{0: [], 1: []} for _ in range(self.n_workers)]
         finished: list[tuple[list[TrajStep], float]] = []
+        stats: dict[str, OppStats] = defaultdict(OppStats)  # realized per-opponent tally
         n_done = 0
 
         while n_done < n_games:
@@ -242,7 +275,17 @@ class DistributedCollector:
                     _, wid, seat, policy, enc = m
                     decides[policy].append((wid, seat, enc))
                 else:  # DONE
-                    _, wid, result = m
+                    _, wid, result, opp_spec, model_seat = m
+                    rec = stats[opp_spec]  # learner-at-model_seat outcome vs this opponent
+                    rec.games += 1
+                    if result is None:
+                        rec.forfeits += 1  # discarded below — contributes no gradient
+                    elif result == 2:
+                        rec.draws += 1
+                    elif result == model_seat:
+                        rec.wins += 1
+                    else:
+                        rec.losses += 1
                     if result is not None:
                         for seat, steps in traj[wid].items():
                             if steps:
@@ -260,6 +303,7 @@ class DistributedCollector:
                         traj[wid][seat].append((enc, o["action"], o["log_prob"], o["value"]))
                     self._resp_qs[wid].put(o["action"])
 
+        self.last_opp_stats = dict(stats)
         return build_buffer_from_trajectories(finished, gamma, lam)
 
     def close(self) -> None:
