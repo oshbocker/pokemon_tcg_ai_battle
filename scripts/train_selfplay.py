@@ -319,12 +319,39 @@ def main() -> int:
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", type=Path, default=REPO / "outputs" / "checkpoints")
+    ap.add_argument(
+        "--init-ckpt",
+        type=Path,
+        default=None,
+        help="warm-start (Piece 2, coevolution §4.1): load a parent {model,cfg} .pt into "
+        "the trainee before iter 1 (state_dict strict=False, so a 1-card deck swap / "
+        "use_card_meta mismatch is tolerated) and seed the gate's frozen_best + pool from it. "
+        "The trainee architecture is taken from the checkpoint's cfg (overrides --size). "
+        "Pair with a low --lr (~3e-5) and a short --iters (~20-30) — the point is fast "
+        "re-adaptation to a near-identical deck, not a cold run.",
+    )
     a = ap.parse_args()
 
     set_seed(a.seed)
-    cfg = SIZE_BANDS[a.size]
-    cfg = ModelConfig(**{**cfg.__dict__, "use_option_rank": not a.no_option_rank})
-    model = PtcgNet(cfg).to(a.device)
+    if a.init_ckpt:
+        # Warm-start: architecture MUST match the parent to load its weights, so take
+        # cfg from the checkpoint (ignore --size). strict=False tolerates a deck swap
+        # (deck is not in the state_dict anyway) and a use_card_meta buffer mismatch.
+        pck = torch.load(a.init_ckpt, map_location=a.device, weights_only=False)
+        cfg = ModelConfig(**pck["cfg"]) if isinstance(pck.get("cfg"), dict) else ModelConfig()
+        model = PtcgNet(cfg).to(a.device)
+        miss = model.load_state_dict(pck["model"], strict=False)
+        pmeta = {k: v for k, v in pck.items() if k not in ("model", "cfg")}
+        print(
+            f"warm-start init from {a.init_ckpt}  cfg=d{cfg.d_model}/L{cfg.n_layers} "
+            f"option_rank={cfg.use_option_rank}  parent={pmeta}\n"
+            f"       load_state_dict(strict=False): missing={list(miss.missing_keys)} "
+            f"unexpected={list(miss.unexpected_keys)}"
+        )
+    else:
+        cfg = SIZE_BANDS[a.size]
+        cfg = ModelConfig(**{**cfg.__dict__, "use_option_rank": not a.no_option_rank})
+        model = PtcgNet(cfg).to(a.device)
     total, nonemb = param_counts(model)
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)
     ppo_cfg = PPOConfig(
@@ -409,6 +436,15 @@ def main() -> int:
 
     # P3.3: frozen last-best opponent for gated promotion (the anti-collapse net).
     frozen_best = copy.deepcopy(model).eval() if a.gate else None
+
+    # Warm-start: seed the league pool with the parent as a never-forgotten "past me"
+    # so the short fine-tune can't silently regress below the checkpoint it started from
+    # (frozen_best is already the parent via the copy above).
+    if a.init_ckpt and use_league:
+        parent_snap = copy.deepcopy(model).eval()
+        for p in parent_snap.parameters():
+            p.requires_grad_(False)
+        pool["parent"] = parent_snap
 
     # Pool gate: fixed agent opponents = the training league (manifest, else flags).
     gate_vs_pool = a.gate and a.gate_vs == "pool"
