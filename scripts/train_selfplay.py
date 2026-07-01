@@ -50,6 +50,64 @@ def _lerp(a: float, b: float, frac: float) -> float:
     return a + (b - a) * frac
 
 
+def _short(spec: str) -> str:
+    """Human label for a league spec (drop the ``kaggle:`` prefix)."""
+    return spec[len("kaggle:") :] if spec.startswith("kaggle:") else spec
+
+
+def gate_pool_score(
+    model: PtcgNet,
+    frozen_best: PtcgNet,
+    pool: dict[str, PtcgNet],
+    deck: list[int],
+    fixed_opps: list[tuple[str, float]],
+    *,
+    games: int,
+    device: str,
+    seed: int,
+    w_self: float,
+    w_past: float,
+    past_sample: int,
+) -> tuple[float, list[tuple[str, float, float]]]:
+    """Weighted pool win-rate of ``model`` across the training league.
+
+    The gate opponent set mirrors what we train against:
+      * the frozen last-best (``self``, weight ``w_self``) and a sample of recent past
+        checkpoints (``past`` bucket, combined weight ``w_past``) — both via `play_match`
+        on the mirror deck, preserving the "don't regress vs your past self" signal;
+      * the fixed manifest agents (kaggle/heuristic/random, their own weights) — via
+        `quick_eval`, each piloting its own deck (side-swapped, deck-correct).
+
+    Returns ``(weighted_winrate, breakdown)`` where breakdown is a list of
+    ``(label, winrate, weight)`` per opponent bucket (NaN win-rates are reported but
+    dropped from the aggregate)."""
+    parts: list[tuple[str, float, float]] = []
+
+    # self bucket: current net vs the frozen last-best (anti-regression signal).
+    r = play_match(model, frozen_best, deck, games, device=device, seed=seed)
+    parts.append(("self", r["winrate"], w_self))
+
+    # past bucket: recent frozen checkpoints, aggregated into one weighted entry.
+    past_ids = list(pool)[-past_sample:] if past_sample > 0 else []
+    past_wrs = [
+        play_match(model, pool[pid], deck, games, device=device, seed=seed)["winrate"]
+        for pid in past_ids
+    ]
+    past_valid = [w for w in past_wrs if w == w]  # not NaN
+    if past_valid:
+        parts.append(("past", sum(past_valid) / len(past_valid), w_past))
+
+    # fixed agents from the manifest (or flag fallback): each pilots its own deck.
+    for spec, w in fixed_opps:
+        r = quick_eval(model, deck, spec, games, device=device, seed=seed)
+        parts.append((_short(spec), r["winrate"], w))
+
+    num = sum(w * wr for _, wr, w in parts if wr == wr)
+    den = sum(w for _, wr, w in parts if wr == wr)
+    score = num / den if den else float("nan")
+    return score, parts
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -116,9 +174,30 @@ def main() -> int:
     ap.add_argument(
         "--gate", action="store_true", help="promote best.pt by gating vs frozen last-best"
     )
+    ap.add_argument(
+        "--gate-vs",
+        default="mirror",
+        choices=["mirror", "pool"],
+        help="gate opponent set: 'mirror' = frozen best only (legacy); 'pool' = weighted "
+        "win-rate across the training league (self/past + manifest agents)",
+    )
     ap.add_argument("--gate-every", type=int, default=5)
-    ap.add_argument("--gate-games", type=int, default=200, help="side-swapped games vs frozen best")
-    ap.add_argument("--gate-threshold", type=float, default=0.55, help="win-rate to promote")
+    ap.add_argument(
+        "--gate-games",
+        type=int,
+        default=200,
+        help="side-swapped games PER opponent bucket (mirror: total vs frozen best)",
+    )
+    ap.add_argument(
+        "--gate-threshold",
+        type=float,
+        default=0.55,
+        help="mirror gate: win-rate to promote. pool gate: absolute floor (0=off), "
+        "on top of the relative 'must beat last-promoted pool score' rule",
+    )
+    ap.add_argument(
+        "--gate-past", type=int, default=2, help="pool gate: recent past checkpoints to sample"
+    )
     ap.add_argument("--eval-every", type=int, default=5)
     ap.add_argument("--eval-games", type=int, default=80)
     ap.add_argument("--eval-opponents", default="random", help="comma list for in-loop eval")
@@ -193,6 +272,23 @@ def main() -> int:
     # P3.3: frozen last-best opponent for gated promotion (the anti-collapse net).
     frozen_best = copy.deepcopy(model).eval() if a.gate else None
 
+    # Pool gate: fixed agent opponents = the training league (manifest, else flags).
+    gate_vs_pool = a.gate and a.gate_vs == "pool"
+    gate_fixed: list[tuple[str, float]] = []
+    if gate_vs_pool:
+        gate_fixed = list(manifest_extra)
+        if not gate_fixed and a.opp_manifest:
+            from ptcg_battle.opponents import load_manifest, manifest_to_league_args
+
+            gate_fixed, _ = manifest_to_league_args(load_manifest(a.opp_manifest))
+        if not gate_fixed:  # flag fallback (no manifest active)
+            if a.w_heuristic > 0:
+                gate_fixed.append(("heuristic", a.w_heuristic))
+            if a.w_random > 0:
+                gate_fixed.append(("random", a.w_random))
+            if a.league_kaggle and a.w_kaggle > 0:
+                gate_fixed.append((f"kaggle:{a.league_kaggle}", a.w_kaggle))
+
     deck_name = (a.deck or (REPO / "agent" / "deck.csv")).name
     if use_league and manifest_on:
         opp_desc = "  league: self={} past={}(≤{}) + manifest[{}]".format(
@@ -224,10 +320,22 @@ def main() -> int:
         f"       collector={a.collector}"
         + (f"(W={a.workers})" if a.collector == "dist" else "")
         + opp_desc
-        + (f"  gate>{a.gate_threshold:.0%}/{a.gate_games}g every {a.gate_every}" if a.gate else "")
+        + (
+            (
+                "  gate[pool"
+                + (f"|floor>{a.gate_threshold:.0%}" if a.gate_threshold > 0 else "")
+                + f"]/{a.gate_games}g every {a.gate_every} vs "
+                + ", ".join(["self", "past", *(_short(s) for s, _ in gate_fixed)])
+                if gate_vs_pool
+                else f"  gate[mirror]>{a.gate_threshold:.0%}/{a.gate_games}g every {a.gate_every}"
+            )
+            if a.gate
+            else ""
+        )
         + "\n"
     )
     best = -1.0
+    best_pool = -1.0  # last-promoted checkpoint's weighted pool score (relative gate)
     try:
         for it in range(1, a.iters + 1):
             frac = (it - 1) / max(1, a.iters - 1)
@@ -293,25 +401,68 @@ def main() -> int:
                 f"clip={m['clipfrac']:.2f} upd={int(m.get('updates', 0))} lr={cur_lr:.1e}{lg}  {dt:.1f}s"
             )
 
-            # P3.3 gated promotion: beat the frozen last-best by the threshold to promote.
+            # P3.3 gated promotion: crown best.pt when the current net clears the gate.
             if a.gate and (it % a.gate_every == 0 or it == a.iters):
                 assert frozen_best is not None
-                r = play_match(model, frozen_best, deck, a.gate_games, device=a.device, seed=a.seed)
-                gate_wr = r["winrate"]
-                line += f"  | gate vs best {gate_wr * 100:.1f}%(n={r['n']})"
-                if gate_wr == gate_wr and gate_wr > a.gate_threshold:  # not NaN
-                    frozen_best = copy.deepcopy(model).eval()
-                    best = gate_wr
-                    torch.save(
-                        {
-                            "model": model.state_dict(),
-                            "cfg": cfg.__dict__,
-                            "gate_wr": best,
-                            "iter": it,
-                        },
-                        a.out / "best.pt",
+                if gate_vs_pool:
+                    # Weighted win-rate across the training league (self/past + manifest
+                    # agents). Relative gate: promote when it beats the last-promoted pool
+                    # score, with an optional absolute floor (--gate-threshold).
+                    score, parts = gate_pool_score(
+                        model,
+                        frozen_best,
+                        pool,
+                        deck,
+                        gate_fixed,
+                        games=a.gate_games,
+                        device=a.device,
+                        seed=a.seed,
+                        w_self=a.w_self,
+                        w_past=a.w_past,
+                        past_sample=a.gate_past,
                     )
-                    line += "  [PROMOTED]"
+                    breakdown = " | ".join(
+                        f"{lbl} {wr * 100:.0f}" for lbl, wr, _w in parts if wr == wr
+                    )
+                    line += f"  | gate pool {score * 100:.1f}% [{breakdown}]"
+                    promote = (
+                        score == score  # not NaN
+                        and score > best_pool
+                        and (a.gate_threshold <= 0 or score >= a.gate_threshold)
+                    )
+                    if promote:
+                        frozen_best = copy.deepcopy(model).eval()
+                        best = best_pool = score
+                        torch.save(
+                            {
+                                "model": model.state_dict(),
+                                "cfg": cfg.__dict__,
+                                "gate_pool_score": best_pool,
+                                "gate_vs": "pool",
+                                "iter": it,
+                            },
+                            a.out / "best.pt",
+                        )
+                        line += "  [PROMOTED]"
+                else:
+                    r = play_match(
+                        model, frozen_best, deck, a.gate_games, device=a.device, seed=a.seed
+                    )
+                    gate_wr = r["winrate"]
+                    line += f"  | gate vs best {gate_wr * 100:.1f}%(n={r['n']})"
+                    if gate_wr == gate_wr and gate_wr > a.gate_threshold:  # not NaN
+                        frozen_best = copy.deepcopy(model).eval()
+                        best = gate_wr
+                        torch.save(
+                            {
+                                "model": model.state_dict(),
+                                "cfg": cfg.__dict__,
+                                "gate_wr": best,
+                                "iter": it,
+                            },
+                            a.out / "best.pt",
+                        )
+                        line += "  [PROMOTED]"
 
             if it % a.eval_every == 0 or it == a.iters:
                 evals = []
@@ -344,7 +495,11 @@ def main() -> int:
     torch.save(
         {"model": model.state_dict(), "cfg": cfg.__dict__, "iter": a.iters}, a.out / "last.pt"
     )
-    metric = "gate vs best" if a.gate else f"in-loop vs {eval_opps[0]}"
+    metric = (
+        ("gate pool" if gate_vs_pool else "gate vs best")
+        if a.gate
+        else f"in-loop vs {eval_opps[0]}"
+    )
     print(f"\ndone. best {metric} = {best * 100:.1f}%  ->  {a.out}")
     return 0
 
