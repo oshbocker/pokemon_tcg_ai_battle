@@ -17,6 +17,12 @@ case (the large majority of decisions) is just the first step.
 ablation lever for the B1-ordering prior (see `PHASE1_RESEARCH.md`). Flip it off to
 train the counterfactual and measure whether the prior actually helps.
 
+`use_card_meta` (default off) adds a frozen static card-metadata feature
+(`card_meta.py`: type/HP/stage/ex-flags/... per Card ID) projected into the card
+embeddings — the coevolution fix for novel-card deck mutations whose learned
+embedding row is cold. The projection is zero-init and created last, so a meta-ON
+net warm-started from a meta-OFF parent is behavior-identical at iteration 0.
+
 This is the only canonical model definition; `scripts/bench_inference.py` imports
 `SIZE_BANDS` / `PtcgNet` / `synthetic_collated` from here so timing reflects the
 real network.
@@ -31,6 +37,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .card_meta import CARD_META_DIM, build_card_meta_table
 from .encoding import (
     ATTACK_VOCAB,
     CARD_VOCAB,
@@ -59,6 +66,7 @@ class ModelConfig:
     d_ff: int = 1024
     dropout: float = 0.0
     use_option_rank: bool = True
+    use_card_meta: bool = False
 
 
 # Size bands probed in P0.3. `small` is the first training band (see PHASE0_THROUGHPUT.md).
@@ -197,6 +205,22 @@ class PtcgNet(nn.Module):
         # distributions stay identical (the PPO-ratio parity invariant).
         self.logit_scale = d**-0.5
         self.value_head = nn.Sequential(nn.Linear(d, d), nn.GELU(), nn.Linear(d, 1), nn.Tanh())
+        # Frozen static card metadata (use_card_meta). Created LAST so a meta-ON net
+        # draws the same RNG stream as a meta-OFF one for every shared module; with
+        # the zero-init, bias-free projection the two are then behavior-identical at
+        # init — warm-starting a meta-OFF parent into a meta-ON net (strict=False)
+        # preserves the parent exactly at iter 0, and metadata influence is learned.
+        # The table is a persistent buffer: checkpoints carry it, so inference (the
+        # Kaggle bundle has no data/) never needs the CSV.
+        if cfg.use_card_meta:
+            try:
+                table = torch.from_numpy(build_card_meta_table())
+            except FileNotFoundError:  # no CSV here; a checkpoint load fills the buffer
+                table = torch.zeros(CARD_VOCAB, CARD_META_DIM)
+            self.card_meta_table: torch.Tensor  # (register_buffer is untyped)
+            self.register_buffer("card_meta_table", table)
+            self.card_meta_proj = nn.Linear(CARD_META_DIM, d, bias=False)
+            nn.init.zeros_(self.card_meta_proj.weight)
 
     # -- shared encode: tokens -> trunk -> (option hidden, query base, value) --
     def _encode(self, batch: dict) -> dict:
@@ -208,6 +232,8 @@ class PtcgNet(nn.Module):
             + self.ent_feat_proj(batch["ent_feat"])
             + self.ent_energy_proj(batch["ent_energy"])
         )  # [B,E,d] -- pre-trunk entity embeddings (also the option->target source)
+        if self.cfg.use_card_meta:
+            ent = ent + self.card_meta_proj(self.card_meta_table[batch["ent_card"]])
 
         opt = (
             self.card_emb(batch["opt_card"])
@@ -218,6 +244,8 @@ class PtcgNet(nn.Module):
             + self.special_emb(batch["opt_special"])
             + self.opt_feat_proj(batch["opt_feat"])
         )
+        if self.cfg.use_card_meta:
+            opt = opt + self.card_meta_proj(self.card_meta_table[batch["opt_card"]])
         # option -> target entity link (gather each option's target entity embedding)
         tgt = batch["opt_target"].unsqueeze(-1).expand(-1, -1, ent.shape[-1])  # [B,O,d]
         opt = opt + torch.gather(ent, 1, tgt)

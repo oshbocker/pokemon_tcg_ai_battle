@@ -40,6 +40,24 @@ def test_model_agent_emits_legal_selection(tmp_path, obs_samples):
         assert all(0 <= i < n for i in action)
 
 
+def test_model_agent_loads_card_meta_ckpt(tmp_path, obs_samples):
+    """A `use_card_meta` checkpoint round-trips through the eval harness unchanged:
+    the net is rebuilt from the ckpt's cfg (which carries the flag) and the frozen
+    metadata table rides along as a persistent buffer in the state_dict."""
+    cfg = ModelConfig(d_model=64, n_layers=2, n_heads=4, d_ff=128, use_card_meta=True)
+    torch.manual_seed(0)
+    model = PtcgNet(cfg)
+    ckpt = tmp_path / "meta.pt"
+    torch.save({"model": model.state_dict(), "cfg": cfg.__dict__, "iter": 0}, ckpt)
+    agent_fn, deck = _build_model_agent(f"model:{ckpt}")
+    assert len(deck) == 60
+    obs = obs_samples[0]
+    action = agent_fn(obs)
+    sel = obs["select"]
+    assert sel["minCount"] <= len(action) <= sel["maxCount"]
+    assert all(0 <= i < len(sel["option"]) for i in action)
+
+
 def test_model_champion_runs_through_evaluate(tmp_path):
     ckpt = tmp_path / "tiny.pt"
     _save_tiny_ckpt(ckpt)

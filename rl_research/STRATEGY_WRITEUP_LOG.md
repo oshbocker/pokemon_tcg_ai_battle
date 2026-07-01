@@ -214,4 +214,116 @@ the ladder after the next submission. Watch for regression on the held-out
 `kaggle:archaludon` yardstick (over-indexing on Alakazam). Known un-addressed gap:
 Marnie's Grimmsnarl (0‑3 on ladder) is still absent from the pool.
 
+### 2026-07-01 — competitive meta research → coevolution deck seeds (real vs Kaggle)
+Ran a deep-research sweep (r/pkmntcg + LimitlessTCG/RK9/NAIC, adversarially
+verified) and reconciled it against our Kaggle ladder meta + card pool. Full
+digest: [`META_RESEARCH_2026-07-01.md`](META_RESEARCH_2026-07-01.md). Two findings
+reshape the coevolution seeding plan:
+
+**(1) Our card pool is CURATED — real decklists don't copy 1:1.** Every meta
+archetype's Pokémon lines are legal, but universal Standard staple *trainers* are
+ABSENT (Iono, Arven, Professor's Research, Nest Ball, Counter Catcher, Super Rod;
+special Darkness Energy). The engine's draw/disruption shell is a different set
+(Dawn/Hilda/Cheren/Judge/Boss's Orders/Ultra Ball). So an archetype's Pokémon core
+transfers but the **trainer shell must be *discovered*, not copied** — which is
+exactly what makes the coevolution search valuable (the optimal in-pool 60 is
+unknown). Bonus reconciliations: our **Alakazam is likely stronger in Kaggle than
+real** (its real predator *Iono* isn't in-pool); **Archaludon's** real-world
+decline may not transfer, but see (2).
+
+**(2) Real-world tier = archetype *headroom*; Kaggle meta = current fitness.**
+Verified standings vs our measured Kaggle numbers:
+- **Alakazam (B):** real tier-1.5 (NAIC 2026 2nd) AND Kaggle #1 (32%/51%) → keep, top seed.
+- **Archaludon (A):** Kaggle #2 (13%/49%, our best agent) but real-world **declined /
+  not tier-1-2** → keep (ladder rewards Kaggle strength) but treat as **lower-ceiling**;
+  let stronger seeds overtake it in coevolution rather than over-investing.
+- **Marnie's Grimmsnarl ex:** strong in BOTH (real tier-1; Kaggle 7%/57%, the deck
+  that beat our Archaludon) — closes the earlier "is Grimmsnarl worth it" question: yes.
+- **Dragapult ex:** real format-defining (~4/8 NAIC top-8) but only 4% of Kaggle pilots
+  → likely **Kaggle-underexploited alpha**.
+
+**Roster decision for coevolution seeds:** add **Grimmsnarl** (spread/disruption
+control) and **Dragapult** (tempo/bench-spread) as high-confidence, strategically-
+distinct, in-pool-legal additions to the Metal-control + Psychic-combo pair; a 3rd
+seed is a fork (Clefairy single-prize aggro [real NAIC winner] / Chandelure [Kaggle
+60%] / Crustle stall [orthogonal, hardens vs the stall decks our agents fold to]).
+This gives coevolution a diverse, from-strength starting population. The real-vs-Kaggle
+*divergence itself* (Dragapult underplayed here) is the kind of exploitable gap the
+search should find. Writeup-relevant: this is the "deck concept + alignment" 20% and
+feeds the robustness (matchup-diversity) 70% story. Builds on [[coevolutionary-deck-search]].
+
+Un-verified / to pull fresh before seeding: exact Dragapult & Clefairy counts (only
+Alakazam + Grimmsnarl lists were verified); several meta-share numbers were
+adversarially refuted (see digest caveats).
+
+### 2026-07-01 — coevolution kill-criterion: warm-start fine-tune PASSES (vs cold)
+The gating experiment for the whole coevolution deck-search (design:
+[`COEVOLUTIONARY_DECK_SEARCH.md`](COEVOLUTIONARY_DECK_SEARCH.md) §4.1): can a
+*short* warm-start fine-tune give a usable per-mutation deck-fitness signal? If
+warm ≈ cold at an affordable budget, the "trained-agent-as-deck-fitness" idea is
+dead. Setup: deck = `archaludon_judge_swap` (1-card swap from the parent's deck);
+both runs 30 iters / 48 games-iter / CPU / same mixed_pool league + pool gate
+(>55% floor). WARM = `--init-ckpt probe_archaludon_medium_long/best.pt`, LR 3e-5→1e-5.
+COLD = scratch, LR 3e-4.
+
+**Result — decisive:**
+| | WARM (init from parent) | COLD (scratch) |
+|---|---|---|
+| entropy | healthy ~0.82 throughout, no collapse | **collapsed to 0.000 by it3** (KL breaker tripped it1) |
+| gate-pool @it10 | **63.4%** (PROMOTED) | **18.6%** (never promoted → no `cold/best.pt`) |
+| gate-pool final | **68.5%** @it30, monotonic ↑ | still collapsed; killed at it12 |
+| per-opp @best | archaludon 77 / starmie 83 / dragapult 73 / alakazam 60 | archaludon 7 / starmie 0 / dragapult 0 / alakazam 13 |
+
+Warm re-adapts to the swapped deck in ~10 iters (~7-20 min on L4); cold self-play
+from random init at that budget collapses (the exact failure the 1200-iter
+anti-collapse recipe exists to avoid). **Verdict: warm-start-as-fitness is
+validated for SMALL mutations → the coevolution search is viable.** Caveat that
+bounds the claim: a 1-card swap is the *easiest* case (nearly all card-ID embedding
+rows already trained); the edge shrinks for mutations adding NOVEL cards (cold
+embedding rows) — the design's frozen card-metadata feature is the proposed fix and
+the natural next experiment. Stopped the redundant cold run (collapsed, foregone).
+
+**Sharper test running:** high-n side-swapped `ref` (parent on original deck) /
+`zero-shot` (parent on swapped, no fine-tune) / `warm` eval (160 games × 7
+mixed_pool opponents, Wilson CIs) → `outputs/coevo_kill/eval_{ref,zeroshot,warm}.csv`.
+The decision-relevant number is **warm vs zero-shot**.
+
+**Results (160 games/opp side-swapped, Wilson 95% CI; unweighted mean across 7):**
+| Opponent | ref (orig deck) | zero-shot (swap, no FT) | warm (swap, FT) | warm−zeroshot |
+|---|---|---|---|---|
+| kaggle:alakazam | 54.4% | 55.0% | **66.9%** | **+11.9** |
+| kaggle:archaludon | 67.5% | 65.0% | 70.0% | +5.0 |
+| kaggle:starmie | 91.9% | 88.8% | 88.1% | −0.7 |
+| kaggle:dragapult | 73.8% | 71.9% | 69.4% | −2.5 |
+| kaggle:romanrozen | 88.8% | 81.2% | 80.0% | −1.2 |
+| heuristic | 86.2% | 84.4% | 85.0% | +0.6 |
+| random | 100% | 100% | 100% | 0 |
+| **mean** | **80.4%** | **78.0%** | **79.9%** | **+1.9** |
+
+**Interpretation — the useful finding is NOT the aggregate.** On a 1-card swap,
+zero-shot already sits ~ref (78.0 vs 80.4) → it's a fine near-free *coarse* filter.
+Warm-start recovers to ref (79.9) — but the aggregate +1.9 hides that the gain is
+**concentrated in one matchup: Alakazam, +11.9pp** (zero-shot 55→warm 67, z≈2.2,
+p≈0.03), while every other matchup is warm≈zero-shot (noise). Why: the swapped card
+is **Judge** (shuffle-draw-4, hand disruption), a *targeted anti-Alakazam tech* —
+Alakazam's combo damage scales with hand size. **The mutation's value is LATENT: the
+parent already had Judge in-deck (zero-shot) but hadn't learned to *play* it vs
+Alakazam; only fine-tuning realizes the +12pp.** This is the core argument for
+warm-start-as-fitness over zero-shot: **zero-shot systematically undervalues cards
+whose payoff needs learned sequencing** — exactly the matchup-fixing mutations a deck
+search exists to find. (Bonus: this is a concrete, real anti-Alakazam deck fix,
+complementary to the RL-exploiter pool run — the search would find it automatically.)
+
+**Conclusions for the plan:**
+1. Kill-criterion PASSED — warm-start is a valid, cheap per-mutation fitness (recovers
+   ref where cold collapses).
+2. Adopt the **two-stage fitness protocol** (now evidence-backed): zero-shot coarse
+   pre-filter to cull cheaply → warm-start fine-tune on survivors to realize+confirm
+   latent matchup gains that zero-shot cannot see.
+3. **Next experiment = the real bottleneck:** all of the above is the *easy* 1-card
+   swap (embedding rows already trained). NOVEL-card mutations will crater zero-shot
+   and stress warm-start. Test the **`use_card_meta` frozen-metadata feature** as the
+   fix: does it let warm-start recover strength on a mutation that adds a card the
+   parent never saw? That gates whether the search scales past tiny swaps.
+
 <!-- Append new dated entries above this line as strategy evolves. -->

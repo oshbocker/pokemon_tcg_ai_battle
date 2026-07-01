@@ -187,6 +187,13 @@ def main() -> int:
     )
     ap.add_argument("--no-option-rank", action="store_true", help="ablate the engine-order feature")
     ap.add_argument(
+        "--use-card-meta",
+        action="store_true",
+        help="add the frozen static card-metadata feature (card_meta.py) — the coevolution "
+        "novel-card fix. With --init-ckpt this grafts the (zero-init) metadata pathway "
+        "onto a meta-OFF parent, preserving its behavior at iter 0.",
+    )
+    ap.add_argument(
         "--opponent", default="random", choices=["self", "random", "first", "heuristic"]
     )
     ap.add_argument("--iters", type=int, default=40)
@@ -339,18 +346,29 @@ def main() -> int:
         # (deck is not in the state_dict anyway) and a use_card_meta buffer mismatch.
         pck = torch.load(a.init_ckpt, map_location=a.device, weights_only=False)
         cfg = ModelConfig(**pck["cfg"]) if isinstance(pck.get("cfg"), dict) else ModelConfig()
+        if a.use_card_meta and not cfg.use_card_meta:
+            # Graft the metadata pathway onto a meta-OFF parent: the buffer + zero-init
+            # proj are the only missing keys under strict=False, so iter-0 behavior is
+            # exactly the parent's and metadata influence is learned during fine-tune.
+            cfg = ModelConfig(**{**cfg.__dict__, "use_card_meta": True})
         model = PtcgNet(cfg).to(a.device)
         miss = model.load_state_dict(pck["model"], strict=False)
         pmeta = {k: v for k, v in pck.items() if k not in ("model", "cfg")}
         print(
             f"warm-start init from {a.init_ckpt}  cfg=d{cfg.d_model}/L{cfg.n_layers} "
-            f"option_rank={cfg.use_option_rank}  parent={pmeta}\n"
+            f"option_rank={cfg.use_option_rank} card_meta={cfg.use_card_meta}  parent={pmeta}\n"
             f"       load_state_dict(strict=False): missing={list(miss.missing_keys)} "
             f"unexpected={list(miss.unexpected_keys)}"
         )
     else:
         cfg = SIZE_BANDS[a.size]
-        cfg = ModelConfig(**{**cfg.__dict__, "use_option_rank": not a.no_option_rank})
+        cfg = ModelConfig(
+            **{
+                **cfg.__dict__,
+                "use_option_rank": not a.no_option_rank,
+                "use_card_meta": a.use_card_meta,
+            }
+        )
         model = PtcgNet(cfg).to(a.device)
     total, nonemb = param_counts(model)
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)
@@ -486,7 +504,8 @@ def main() -> int:
         )
     print(
         f"train  size={a.size}({total / 1e6:.1f}M, non-emb {nonemb / 1e6:.1f}M)  "
-        f"option_rank={cfg.use_option_rank}  opponent={a.opponent}  deck={deck_name}  "
+        f"option_rank={cfg.use_option_rank}  card_meta={cfg.use_card_meta}  "
+        f"opponent={a.opponent}  deck={deck_name}  "
         f"device={a.device}\n"
         f"       iters={a.iters} games/iter={a.games_per_iter} epochs={a.epochs} mb={a.minibatch} "
         f"lr={a.lr}->{lr_final} "

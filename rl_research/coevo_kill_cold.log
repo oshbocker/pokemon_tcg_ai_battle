@@ -1,0 +1,17 @@
+train  size=medium(15.8M, non-emb 14.7M)  option_rank=True  opponent=self  deck=archaludon_judge_swap.csv  device=cpu
+       iters=30 games/iter=48 epochs=2 mb=256 lr=0.0003->0.0003 ent~target=0.1(adaptive) kl_cut=1.5 gamma=0.997
+       collector=dist(W=7)  league: self=1.0 past=2.0(≤4) + manifest[kaggle:archaludon=1.5, kaggle:starmie=1.5, kaggle:dragapult=1.5, kaggle:alakazam=1.5, kaggle:romanrozen_v10=1, heuristic=0.5, random=0.3]  gate[pool|floor>55%]/30g every 10 vs self, past, archaludon, starmie, dragapult, alakazam, romanrozen_v10, heuristic, random
+
+it   1  N= 2165  pg=+0.084 vf=0.176 ent=0.375 entc=0.0200 kl=+2.802* clip=0.35 upd=2 lr=3.0e-04 pool=0  33.7s
+it   2  N=  630  pg=+0.058 vf=0.119 ent=0.154 entc=0.0200 kl=+1.389* clip=0.27 upd=4 lr=3.0e-04 pool=0  186.2s
+it   3  N=  951  pg=-0.002 vf=0.363 ent=0.006 entc=0.0292 kl=+0.202 clip=0.02 upd=8 lr=3.0e-04 pool=0  204.5s
+it   4  N=  715  pg=+0.003 vf=0.175 ent=0.017 entc=0.0406 kl=+0.312 clip=0.05 upd=6 lr=3.0e-04 pool=0  198.4s
+it   5  N= 1008  pg=-0.001 vf=0.176 ent=0.003 entc=0.0598 kl=+0.100 clip=0.02 upd=8 lr=3.0e-04 pool=1  808.4s
+it   6  N= 1361  pg=-0.007 vf=0.166 ent=0.000 entc=0.0891 kl=+0.081 clip=0.01 upd=12 lr=3.0e-04 pool=1  508.5s
+it   7  N= 1299  pg=-0.009 vf=0.111 ent=0.000 entc=0.1327 kl=+0.000 clip=0.00 upd=12 lr=3.0e-04 pool=1  800.1s
+it   8  N= 1067  pg=+0.007 vf=0.204 ent=0.000 entc=0.1979 kl=+0.012 clip=0.00 upd=10 lr=3.0e-04 pool=1  302.0s
+it   9  N= 1327  pg=-0.024 vf=0.231 ent=0.004 entc=0.2907 kl=+0.037 clip=0.01 upd=12 lr=3.0e-04 pool=1  653.5s
+it  10  N= 1182  pg=+0.000 vf=0.174 ent=0.001 entc=0.3000 kl=+0.018 clip=0.00 upd=10 lr=3.0e-04 pool=2  1089.6s  | gate pool 18.6% [self 53 | past 53 | archaludon 7 | starmie 0 | dragapult 0 | alakazam 13 | romanrozen_v10 0 | heuristic 0 | random 37]  | eval: random 52.5%(n=80)  | mix: starmie 7g/0%  alakazam 10g/20%  archaludon 7g/0%  dragapult 8g/0%  heuristic 1g/0%  it5 9g/78%  self 5g/40%  romanrozen_v10 1g/0%
+it  11  N=  727  pg=+0.005 vf=0.064 ent=0.012 entc=0.3000 kl=+0.965 clip=0.05 upd=6 lr=3.0e-04 pool=2  171.3s
+it  12  N= 1451  pg=+0.010 vf=0.182 ent=0.008 entc=0.3000 kl=+0.661 clip=0.03 upd=12 lr=3.0e-04 pool=2  789.3s
+it  13  N=  902  pg=-0.015 vf=0.130 ent=0.002 entc=0.3000 kl=+0.054 clip=0.01 upd=8 lr=3.0e-04 pool=2  308.0s

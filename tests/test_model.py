@@ -106,6 +106,40 @@ def test_option_rank_toggle_changes_outputs(encoded):
     assert float((lon[valid] - loff[valid]).abs().max()) > 1e-3
 
 
+def test_card_meta_warm_parity_and_toggle(encoded):
+    """`use_card_meta` contract: (a) at init a meta-ON net is behavior-IDENTICAL to
+    the meta-OFF net (zero-init projection, created last so shared modules draw the
+    same RNG) — that's what makes grafting it onto a meta-OFF parent via
+    `--init-ckpt` behavior-preserving; (b) the buffer has the right shape with a
+    zero PAD row and ships in the state_dict; (c) once the projection is nonzero
+    the feature actually reaches the logits."""
+    from ptcg_battle.card_meta import CARD_META_DIM, DEFAULT_CSV
+    from ptcg_battle.encoding import CARD_VOCAB
+
+    if not DEFAULT_CSV.exists():
+        pytest.skip("data/EN_Card_Data.csv not downloaded")
+    batch = collate(encoded)
+    torch.manual_seed(0)
+    on = PtcgNet(ModelConfig(d_model=128, n_layers=2, n_heads=4, d_ff=256, use_card_meta=True))
+    torch.manual_seed(0)
+    off = PtcgNet(ModelConfig(d_model=128, n_layers=2, n_heads=4, d_ff=256, use_card_meta=False))
+    with torch.no_grad():
+        lon, _ = on.eval()(batch)
+        loff, _ = off.eval()(batch)
+    valid = batch["opt_mask"]
+    assert float((lon[valid] - loff[valid]).abs().max()) < 1e-6  # warm-start parity
+
+    assert on.card_meta_table.shape == (CARD_VOCAB, CARD_META_DIM)
+    assert torch.all(on.card_meta_table[0] == 0)  # PAD row
+    assert "card_meta_table" in on.state_dict()  # persists into checkpoints
+    assert "card_meta_table" not in off.state_dict()
+
+    with torch.no_grad():
+        on.card_meta_proj.weight.normal_(0.0, 0.1)
+        lon2, _ = on(batch)
+    assert float((lon2[valid] - loff[valid]).abs().max()) > 1e-3
+
+
 def test_overfit_one_batch(encoded):
     """Capacity probe: the pointer must drive a fixed single-pick batch's CE to ~0.
 

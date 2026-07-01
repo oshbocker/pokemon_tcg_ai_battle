@@ -22,6 +22,13 @@ sync).
   *not* hand-encode "Crustle walls ex damage". Static `card_table` metadata
   (type, weakness, …) is available but deliberately **not** baked into the
   default features; the ID embedding is expected to learn it from outcomes.
+  *Amendment (coevolution deck search):* a frozen static metadata table
+  (`card_meta.py` — type/HP/stage/rule-box flags per Card ID, projected into the
+  card embeddings) is available behind the **`use_card_meta`** model flag
+  (default **off**, mirroring `use_option_rank`). It exists for deck mutations
+  that introduce cards whose learned embedding row is cold; the encoder is
+  unchanged (the table lives in the model, keyed by the existing
+  `ent_card`/`opt_card` ids).
 - **Pointer action head, no action mask.** The engine hands us a variable-length
   list of **only-legal** options every decision (`select.option`). We emit one
   **candidate token per option**, index-aligned, and the head scores them. The
@@ -171,6 +178,11 @@ categorical embeddings and a linear projection of its numeric features:
   special_emb + Linear(opt_feat)`, **plus the embedding of its `opt_target`
   entity token** (the option→target link), **and — when `use_option_rank` is on —
   a learned `opt_rank` positional embedding** (the engine's best→worst prior).
+- when `use_card_meta` is on, both entity and candidate tokens additionally get
+  `Linear(card_meta_table[card_id])` — a frozen `[CARD_VOCAB, 53]` static-metadata
+  buffer (`card_meta.py`) behind a zero-init, bias-free projection, so a meta-ON
+  net warm-started from a meta-OFF parent is behavior-identical at iter 0 and PAD
+  (row 0 = zeros) contributes nothing.
 
 Run all tokens through a shared transformer (Phase 2 starts ~6–12 blocks,
 `d_model` 256–512; sizing gated by the P0.3 inference probe). Include a couple of

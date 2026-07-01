@@ -1,0 +1,8 @@
+===== TRAIN warm_off  Wed Jul  1 04:18:58 PM MDT 2026 =====
+warm-start init from outputs/probe_archaludon_medium_long/best.pt  cfg=d384/L8 option_rank=True card_meta=False  parent={'gate_wr': 0.655, 'iter': 850}
+       load_state_dict(strict=False): missing=[] unexpected=[]
+train  size=small(15.8M, non-emb 14.7M)  option_rank=True  card_meta=False  opponent=self  deck=archaludon_genesect_swap.csv  device=cpu
+       iters=30 games/iter=48 epochs=2 mb=256 lr=3e-05->1e-05 ent~target=0.1(adaptive) kl_cut=1.5 gamma=0.997
+       collector=dist(W=7)  league: self=1.0 past=2.0(≤4) + manifest[kaggle:archaludon=1.5, kaggle:starmie=1.5, kaggle:dragapult=1.5, kaggle:alakazam=1.5, kaggle:romanrozen_v10=1, heuristic=0.5, random=0.3]  gate[pool|floor>55%]/30g every 10 vs self, past, archaludon, starmie, dragapult, alakazam, romanrozen_v10, heuristic, random
+
+it   1  N= 3554  pg=-0.010 vf=0.056 ent=0.903 entc=0.0200 kl=+0.014 clip=0.09 upd=28 lr=3.0e-05 pool=1  178.2s
