@@ -728,6 +728,17 @@ def main() -> int:
                         for spec, s in collector.last_opp_stats.items()
                     )
                     line += "  | mix: " + mix
+
+            # Crash tolerance: periodically persist the CURRENT net as last.pt — the
+            # final save below only runs if the loop survives, and on Colab the
+            # OOM-killer usually doesn't allow that. Costs one ~60MB write per
+            # gate/eval interval; resume by warm-starting --init-ckpt from this file
+            # (its "iter" field says how far the run got).
+            if it % a.eval_every == 0 or (a.gate and it % a.gate_every == 0) or it == a.iters:
+                torch.save(
+                    {"model": model.state_dict(), "cfg": cfg.__dict__, "iter": it},
+                    a.out / "last.pt",
+                )
             print(line, flush=True)
     finally:
         if collector is not None:
