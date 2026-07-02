@@ -326,4 +326,83 @@ complementary to the RL-exploiter pool run — the search would find it automati
    fix: does it let warm-start recover strength on a mutation that adds a card the
    parent never saw? That gates whether the search scales past tiny swaps.
 
+### 2026-07-01 — novel-card kill-criterion: frozen card-metadata (`use_card_meta`) PASSES
+
+The follow-up the §4.1 entry above flagged as "the real bottleneck": a 1-card
+swap of an *already-trained* card is the easy case — does warm-start-as-fitness
+survive a mutation that introduces a card the parent **never saw** (cold
+embedding row)? Proposed fix, now built: **`use_card_meta`** — a frozen
+`[1268, 53]` static card-metadata table (`src/ptcg_battle/card_meta.py`:
+category/stage/ex-mega-ACE flags, HP scalar+buckets, retreat,
+type/weakness/resistance one-hots from `data/EN_Card_Data.csv`) behind a
+**zero-init, bias-free projection** added to the entity+option card embeddings,
+gated by `ModelConfig.use_card_meta` (mirrors `use_option_rank`; docs §0/§5
+amended). Two load-bearing design choices: the projection is created *last* (a
+meta-ON net consumes the identical RNG stream) and zero-init, so grafting the
+pathway onto a meta-OFF parent via `--init-ckpt --use-card-meta`
+(strict=False; missing keys = exactly the two meta tensors) is
+**behavior-identical at iter 0** — metadata influence is *learned* during the
+fine-tune, never injected as init noise. The table is a persistent buffer, so
+checkpoints carry it (Kaggle bundle needs no CSV).
+
+**Setup** (`scripts/run_coevo_meta_kill.sh`; same recipe as the judge_swap kill
+run): deck = `agent/decks/archaludon_genesect_swap.csv` — parent Archaludon deck
+with 1x Relicanth → **1x Genesect ex (547)**, chosen because it is (a) cold:
+absent from ALL six training decks (the parent's whole training exposure is just
+68 distinct cards), (b) coherent: Metallic Signal searches Evolution cards and
+the deck runs 4x Duraludon → 4x Archaludon ex, (c) a *Pokémon*, so the metadata
+actually describes most of what matters (220 HP Basic {M} ex, weak {R}) — for a
+novel Trainer, metadata only says "Item/Supporter" (effect text is not encoded),
+a known limit of the feature. Parent = `probe_archaludon_medium_long/best.pt`
+(meta-OFF). **Parent-arm decision:** warm-ON grafts a fresh zero-init projection
+onto the meta-OFF parent (local CPU); we did *not* first re-train a meta-ON
+parent (needs Colab/L4) — see caveats. Both arms: 30 iters, 48 g/iter, LR
+3e-5→1e-5, mixed_pool league, pool gate (both promoted, final gate 68.4 vs
+68.5 — the low-n gate can't separate them; the high-n eval below can).
+
+**Results** (160 games/opp side-swapped, Wilson 95% CI; ref = parent on
+original deck from `outputs/coevo_kill/eval_ref.csv`; new CSVs in
+`outputs/coevo_meta/`; logs `rl_research/coevo_meta_*.log`):
+
+| Opponent | ref (orig) | zero-shot (novel) | warm-OFF | warm-ON | ON−OFF |
+|---|---|---|---|---|---|
+| kaggle:archaludon | 67.5% | 55.0% | 61.9% | 64.4% | +2.5 |
+| kaggle:starmie | 91.9% | 87.5% | 83.8% | **92.5%** | **+8.7** |
+| kaggle:dragapult | 73.8% | 57.5% | 66.2% | 66.9% | +0.7 |
+| kaggle:alakazam | 54.4% | 51.9% | 52.5% | **65.6%** | **+13.1** |
+| kaggle:romanrozen | 88.8% | 71.2% | 80.6% | 84.4% | +3.8 |
+| heuristic | 86.2% | 80.6% | 79.4% | 84.4% | +5.0 |
+| random | 100% | 99.4% | 99.4% | 100.0% | +0.6 |
+| **mean** | **80.4%** | **71.9%** | **74.8%** | **79.7%** | **+4.9** |
+
+**Reading the 2×2 — every cell behaved as predicted:**
+1. **Zero-shot craters on a novel card** (−8.5pp vs ref; the judge swap cost
+   only −2.4pp). Confirms the cold-embedding failure mode is real, and bounds
+   the zero-shot pre-filter: it *cannot* rate novel-card mutations.
+2. **Warm-OFF only half-recovers** (74.8%, still −5.6pp below ref after the
+   same 30-iter budget that fully recovered the judge swap). Warm-start alone
+   does not scale to novel cards at this budget.
+3. **Warm-ON recovers to parity with ref** (79.7 vs 80.4) — the metadata
+   feature rescues the case. ON−OFF = +4.9pp on 1120 games/arm (z≈2.8,
+   p≈0.005); concentrated again in Alakazam (+13.1pp, z≈2.4) with warm-ON
+   *exceeding* ref there (65.6 vs 54.4) — same latent-value signature as the
+   judge run: fine-tuning finds matchup gains zero-shot can't see, and
+   metadata is what lets it find them for a card it never trained on.
+
+**VERDICT: PASS.** The coevolution search is no longer bounded to
+near-neighbor swaps of already-seen cards — with `use_card_meta` the
+warm-start fitness signal survives novel-card mutations. Adopted: **search
+children train with `--use-card-meta`** grafted at warm-start.
+
+**Caveats (honesty budget):** one seed per arm; the graft arm conflates "novel
+card gets metadata" with "all cards get metadata during fine-tune" (starmie
++8.7 suggests some of the gain is general, not Genesect-specific); the
+definitive setup is a **meta-ON parent** (metadata pathway already trained →
+novel card slots into a mature representation) — worth a Colab re-train of the
+Archaludon parent before scaling the search; and metadata stays blind to
+Trainer effect text, so novel-Trainer mutations remain the weak spot (the
+two-stage protocol should route those through warm-start, never zero-shot).
+Per [[unproven-work-stays-out-of-writeup]] this stays a dated log entry until
+the full search produces a deck that wins on the ladder.
+
 <!-- Append new dated entries above this line as strategy evolves. -->
