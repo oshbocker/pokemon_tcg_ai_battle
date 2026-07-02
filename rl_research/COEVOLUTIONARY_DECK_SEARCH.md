@@ -166,6 +166,27 @@ judgment about which strategies are good. That's the bias floor.
 - Persist `population.json` + `hall_of_fame/` + append-only `lineage.csv`
   (parent, swap, zero-shot score, post-FT fitness, CI, league_version). Resumable.
 
+### Seeded candidates from the live ladder (exploit before you explore)
+
+Most offspring are random legal swaps, but swaps **observed beating us on the
+Kaggle ladder** are ground-truth meta signal and skip the discovery problem
+entirely — seed them into generation 0 alongside the random stream. First batch
+(2026-07-02 scout, `agent/decks/archaludon_ladder_*.csv`, engine-validated, each
+an *exact* opponent list from ranked replays):
+
+| candidate | swap vs our list | ladder evidence |
+|---|---|---|
+| `archaludon_ladder_judge` | −1 Boss's Orders +1 Judge | 0-2 vs us |
+| `archaludon_ladder_judge_metal` | −Boss's −Pokégear +Judge +Metal Energy | 1-1 |
+| `archaludon_ladder_xerosic` | −Pokégear −Jumbo Ice Cream +2 Xerosic's Machinations | 0-1 |
+
+**Routing rule:** all three swap **Trainers**, and the card-metadata feature is
+blind to Trainer effect text (META_RESEARCH_2026-07-01) — so seeded Trainer
+swaps go **straight to warm-start fine-tune, never through the zero-shot
+pre-filter**, which would discard them for the wrong reason. This generalizes:
+any Trainer-touching mutation routes through warm-start; only Pokémon/Energy
+mutations may be zero-shot pre-filtered.
+
 ### Noise & non-stationarity guards
 
 - Fitness comparisons use the **Wilson lower bound** (`eval_harness`), so an
@@ -219,5 +240,16 @@ rejected (designer-axis bias, bitter lesson); pivoted to competitive coevolution
 competitive fitness sharing + Hall of Fame/resurrection + Nash-averaging for the
 axis-free "keep the fittest, preserve diversity" objective. Nothing built yet;
 next action = the §4.1 kill-criterion experiment.
+
+### 2026-07-02 — ladder-observed swaps wired in (seeds + sparring)
+The scout audit of the it400 sub found the Archaludon pseudo-mirror at 3-6
+(33%), 0-2 vs lists teching **Judge**. The three observed variant lists were
+extracted verbatim from replays into `agent/decks/archaludon_ladder_*.csv`
+(engine-validated) and wired in twice: (a) as **league sparring partners** in
+the meta-ON lineage-root re-train (`--league-checkpoint` piloted by the
+hardened-it400 root itself — judge @1.5, xerosic @0.75), so the learner finally
+experiences hand disruption; (b) as **generation-0 seeded candidates** for this
+search (see "Seeded candidates" §3), routed to warm-start per the
+Trainer-blindness rule. Sample-size caveat: n=9 pseudo-mirror games, one window.
 
 <!-- Append new dated entries above this line. -->

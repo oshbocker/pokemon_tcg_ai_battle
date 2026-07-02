@@ -11,8 +11,9 @@ runtime image). Archive layout, all at the root:
     deck.csv       # the deck the policy pilots
     cg/            # the cabt engine SDK
     rl/__init__.py
-    rl/encoding.py # vendored, numpy-only
-    rl/model.py    # vendored, torch (imports .encoding)
+    rl/encoding.py  # vendored, numpy-only
+    rl/card_meta.py # vendored, numpy-only (model.py imports it at module level)
+    rl/model.py     # vendored, torch (imports .encoding, .card_meta)
     rl/best.pt     # the {model, cfg} checkpoint
 
     uv run python scripts/build_rl_submission.py \
@@ -119,6 +120,7 @@ def build(main: Path, deck: Path, cg: Path, checkpoint: Path, out: Path) -> Path
         (stage / "rl").mkdir()
         (stage / "rl" / "__init__.py").write_text("")
         shutil.copy2(SRC / "encoding.py", stage / "rl" / "encoding.py")
+        shutil.copy2(SRC / "card_meta.py", stage / "rl" / "card_meta.py")
         shutil.copy2(SRC / "model.py", stage / "rl" / "model.py")
         shutil.copy2(checkpoint, stage / "rl" / "best.pt")
 
@@ -136,7 +138,7 @@ def build(main: Path, deck: Path, cg: Path, checkpoint: Path, out: Path) -> Path
         print("  ", n)
     if "main.py" not in names:
         raise RuntimeError("main.py must be at the archive root")
-    for need in ("rl/model.py", "rl/encoding.py", "rl/best.pt", "deck.csv"):
+    for need in ("rl/model.py", "rl/encoding.py", "rl/card_meta.py", "rl/best.pt", "deck.csv"):
         if need not in names:
             raise RuntimeError(f"missing {need} in bundle")
     return out

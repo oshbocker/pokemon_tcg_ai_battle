@@ -405,4 +405,93 @@ two-stage protocol should route those through warm-start, never zero-shot).
 Per [[unproven-work-stays-out-of-writeup]] this stays a dated log entry until
 the full search produces a deck that wins on the ladder.
 
+### 2026-07-01 — PFSP hardening run validated: it400 dominates the submitted checkpoint
+
+The `archaludon_alakazam_hardened` run (warm-start from the submitted
+`probe_archaludon_medium_long/best.pt` it850, PFSP[var] + `model:alakazam_rl`
+@2.0 in the league, 400/500 iters before we reclaimed the L4) directly targeted
+the two ladder losses from the first RL sub (Alakazam 0-3, Starmie 0-2):
+
+- **Alakazam matchup transformed**: eval vs `kaggle:alakazam` 60.8% → ~80%
+  (86.7% at it375, 78.3% at it400, n=120 each); gate vs scripted alakazam
+  52% → 85-87%. Vs the *trained* `alakazam_rl` exploiter: 24% → ~40%
+  (plateaued it150+ despite PFSP feeding it the most games — a real strength
+  ceiling vs that policy, not under-sampling).
+- **Starmie held at 88-94% all run** — the tempo weakness is gone.
+- **Head-to-head vs the submitted ckpt (local, 600g side-swapped, greedy):
+  98.3% [97.0, 99.1], zero seat asymmetry.** Sanity-checked: the parent file
+  is byte-identical to Drive's and plays competently vs the local heuristic
+  (56% vs child's 61%, overlapping CIs) — so the blowout is real exploitation
+  of the frozen parent it trained against, not a broken opponent.
+
+**Honest read for the writeup**: the 98.3% is greedy-vs-greedy exploitation of
+a deterministic sibling, *not* +98% ladder strength — on the neutral local
+heuristic yardstick the child is ≈parity with the parent. The ladder case
+rests on the matchup table: it patches exactly the "over-reliance on specific
+matchups" risk the rubric penalizes. Also logged: the adaptive entropy coef
+sat pinned at 0.0400 for all 400 iters (controller saturated — inspect before
+the next long run); pool gate 60.1% → 69.4% with the final it400 gate the
+best of the run.
+
+**Decision: submit it400 as the new Archaludon agent** (replaces the 1055.9
+sub as one of the two counting slots).
+
+### 2026-07-02 — Ladder scout: hardening worked; new weak spots are field-Archaludon and Snorlax stall
+
+Scouted both live subs (35 recent replays each, one time window — small n,
+per-matchup cells smaller still):
+
+- **Archaludon hardened it400 (sub 54253730, LB 963.8): 22-13 (63%).** The
+  hardening run's targets are confirmed patched on the real ladder: Starmie
+  3-0 (was 0-2) and Alakazam 2-2 (was 0-3). New top weakness is
+  **non-mirror Archaludon pilots: 1-4 (20%, n=5)** — other people's
+  Archaludon lists beat ours even though true mirrors go 2-2. Loss shape is
+  ugly: 12 of 13 losses are blowouts (≥3 prizes still needed; 4 losses took
+  *zero* prizes, two of them 39-86 steps) → setup fragility / it folds
+  entirely when the opening whiffs, rather than losing close endgames.
+- **Alakazam (sub 54235407, LB 966.4): 23-12 (66%).** Farming the
+  Archaludon-heavy field: 12-4 (75%) vs Archaludon, which is 46% of its
+  games — great meta positioning, consistent with the local 17-22 edge.
+  New hard counter: **Hop's Snorlax 0-3**, all long grinds (126-188 steps);
+  4 of its 12 losses are deckouts. That's a stall/mill archetype the agent
+  has never trained against — it wins races but can't win attrition.
+- **Cross-agent shape**: our Alakazam beats field Archaludon; field Alakazam
+  is now only even vs our Archaludon (was a loss). The pair hedges well.
+  Losses avg 148 steps for Alakazam (late-game problem) vs 120 for
+  Archaludon (early-game problem) — the two agents fail in opposite phases.
+
+**Follow-up (same day)**: diffed the non-mirror Archaludon lists in the
+cached replays — they are our list ± 1-2 cards (Judge over Boss's Orders /
+Pokégear; one runs 2x Xerosic's Machinations). So "different lists" is NOT
+the story: combined pseudo-mirror record is 3-6 (33%, n=9), and the losses
+are pilot-skill/variance in an effectively identical-deck matchup, not deck
+coverage. Two of the opposing lists swap in **Judge** (hand disruption),
+which composes badly with our 0-prize setup-collapse losses.
+
+**Fix directions**: (1) add a Hop's Snorlax scripted/exploiter opponent to
+the Alakazam pool (stall exposure + deckout awareness); (2) for Archaludon,
+the mirror gap is play-strength not list coverage — investigate the 0-prize
+collapses (replays under `outputs/replays/scout/54253730/`), consider
+hand-disruption (Judge) exposure in the pool, and possibly test the Judge
+swap in our own list.
+
+**Implemented (same day) — ladder swaps wired into the meta-ON run.** The
+three observed variant lists were extracted verbatim from the replays into
+`agent/decks/archaludon_ladder_{judge,judge_metal,xerosic}.csv` (asserted
+exact match to the observed multisets; engine-validated via
+`validate_deck.py`). The meta-ON lineage-root cell in
+`colab_selfplay_archaludon.ipynb` now adds two extra `--league-checkpoint`
+opponents — the hardened-it400 root itself piloting the judge list @1.5 and
+the xerosic list @0.75 (fixed ROOT, not the resume PARENT, so sparring stays
+constant across crash-resumes) — giving the learner its first exposure to
+hand disruption from a strong near-mirror pilot. Watch the `arch_judge` /
+`arch_xerosic` buckets in the gate breakdown. The same three CSVs double as
+**generation-0 seeded candidates** for the coevo deck search; since all
+three swap Trainers (metadata-blind), they route straight to warm-start,
+never the zero-shot pre-filter (rule + table added to
+COEVOLUTIONARY_DECK_SEARCH.md §3). Verified end-to-end with a 2-iter CPU
+smoke run: card-meta graft loads (`missing=[card_meta_table,
+card_meta_proj.weight]`), both new league entries register, and the mix log
+shows the variant opponent being sampled.
+
 <!-- Append new dated entries above this line as strategy evolves. -->
